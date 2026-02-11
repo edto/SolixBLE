@@ -36,7 +36,10 @@ RECONNECT_ATTEMPTS_MAX = -1
 
 #: Time to allow for a re-connect before considering the
 #: device to be disconnected and running state changed callbacks.
-DISCONNECT_TIMEOUT = 30
+DISCONNECT_TIMEOUT = 120
+
+#: Time to allow for encryption negotiation before timing out
+NEGOTIATION_TIMEOUT = 90
 
 #: String value for unknown string attributes.
 DEFAULT_METADATA_STRING = "Unknown"
@@ -200,23 +203,22 @@ class SolixBLEDevice:
 
             try:
                 # Make a new Bleak client and connect
-                self._client = await establish_connection(
-                    BleakClient,
-                    device=self._ble_device,
-                    name=self.address,
-                    max_attempts=max_attempts,
-                    disconnected_callback=self._disconnect_callback,
-                )
                 self._number_of_received_packets = 0
                 self._shared_key = None
+                self._client = BleakClient(
+                    self._ble_device,
+                    disconnected_callback=self._disconnect_callback,
+                    timeout=10,
+                )
+                await self._client.connect()
 
-            except BleakError as e:
-                _LOGGER.error(f"Error connecting to '{self.name}'. E: '{e}'")
+            except BleakError:
+                _LOGGER.exception(f"Error connecting to '{self.name}'!")
 
         # If we are still not connected then we have failed
         if not self.connected:
             _LOGGER.error(
-                f"Failed to connect to '{self.name}' on attempt {self._connection_attempts}!"
+                f"Failed to establish initial connection to '{self.name}' on attempt {self._connection_attempts}!"
             )
             return False
 
@@ -228,16 +230,25 @@ class SolixBLEDevice:
             try:
                 await self._determine_services()
                 await self._subscribe_to_services()
-
-            except BleakError as e:
-                _LOGGER.error(f"Error subscribing to '{self.name}'. E: '{e}'")
+            except BleakError:
+                _LOGGER.exception(f"Error subscribing/negotiating with '{self.name}'!")
                 return False
 
-        # If we are still not subscribed to telemetry then we have failed
-        if not self.available:
+        # Wait for negotiations to finish and catch and print any errors
+        try:
+            async with asyncio.timeout(NEGOTIATION_TIMEOUT):
+                while not self.available:
+                    await asyncio.sleep(1)
+        except TimeoutError:
+            _LOGGER.exception(f"Timed out attempting to negotiate with '{self.name}'!")
+            return False
+        except Exception:
+            _LOGGER.exception(
+                f"Exception raised attempting to negotiate with '{self.name}'!"
+            )
             return False
 
-        # Else we have succeeded
+        # If negotiations succeeded
         self._expect_disconnect = False
         self._connection_attempts = 0
 
@@ -273,7 +284,12 @@ class SolixBLEDevice:
 
         :returns: True/False if the device is connected and sending telemetry.
         """
-        return self.connected and self.supports_telemetry
+        return (
+            self.connected
+            and self.supports_telemetry
+            and self._shared_key is not None
+            and self._data is not None
+        )
 
     @property
     def address(self) -> str:
@@ -525,11 +541,11 @@ class SolixBLEDevice:
                 if self.available:
                     _LOGGER.debug(f"Successfully re-connected to '{self.name}'")
 
-        except TimeoutError as e:
-            _LOGGER.error(f"Failed to re-connect to '{self.name}'. E: '{e}'")
+        except TimeoutError:
+            _LOGGER.exception(f"Timed out attempting to re-connect to '{self.name}'!")
             self._run_state_changed_callbacks()
 
-    def _disconnect_callback(self, client: BaseBleakClient) -> None:
+    async def _disconnect_callback(self, client: BaseBleakClient) -> None:
         """Re-connect on unexpected disconnect and run callbacks on failure.
 
         This function will re-connect if this is not an expected
@@ -562,7 +578,7 @@ class SolixBLEDevice:
             or self._connection_attempts < RECONNECT_ATTEMPTS_MAX
         ):
             # Try and reconnect
-            self._reconnect_task = asyncio.create_task(self._reconnect())
+            await self._reconnect()
 
         else:
             _LOGGER.warning(
