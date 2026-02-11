@@ -211,6 +211,7 @@ class SolixBLEDevice:
                     timeout=10,
                 )
                 await self._client.connect()
+                await asyncio.sleep(3)
 
             except BleakError:
                 _LOGGER.exception(f"Error connecting to '{self.name}'!")
@@ -241,11 +242,6 @@ class SolixBLEDevice:
                     await asyncio.sleep(1)
         except TimeoutError:
             _LOGGER.exception(f"Timed out attempting to negotiate with '{self.name}'!")
-            return False
-        except Exception:
-            _LOGGER.exception(
-                f"Exception raised attempting to negotiate with '{self.name}'!"
-            )
             return False
 
         # If negotiations succeeded
@@ -525,12 +521,15 @@ class SolixBLEDevice:
             await self._client.start_notify(
                 UUID_TELEMETRY, self._process_telemetry_update
             )
+            _LOGGER.debug("Subscribed to notifications from device!")
 
             # Then initiate negotiations
-            await asyncio.sleep(1)
+            await asyncio.sleep(3)
+            _LOGGER.debug("Starting negotiations...")
             await self._client.write_gatt_char(
                 UUID_COMMAND, bytes.fromhex(NEGOTIATION_COMMAND_0)
             )
+            _LOGGER.debug("Sent negotiation initiation request!")
 
     async def _reconnect(self) -> None:
         """Re-connect to device and run state change callbacks on timeout/failure."""
