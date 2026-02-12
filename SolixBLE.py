@@ -202,9 +202,22 @@ class SolixBLEDevice:
             )
 
             try:
-                # Make a new Bleak client and connect
+
+                # If we have an old client get rid of it
+                if self._client is not None and self._client.is_connected:
+                    _LOGGER.debug(
+                        f"Disposing of old client '{self._client}' in order to connect to '{self.name}'!"
+                    )
+                    self._expect_disconnect = True
+                    await self._client.disconnect()
+                    self._client = None
+
+                # Reset negotiated details
+                self._supports_telemetry = False
                 self._number_of_received_packets = 0
                 self._shared_key = None
+
+                # Make new client and connect
                 self._client = BleakClient(
                     self._ble_device,
                     disconnected_callback=self._disconnect_callback,
@@ -214,7 +227,9 @@ class SolixBLEDevice:
                 await asyncio.sleep(3)
 
             except BleakError:
-                _LOGGER.exception(f"Error connecting to '{self.name}'!")
+                _LOGGER.exception(
+                    f"Error establishing initial connection to '{self.name}'!"
+                )
 
         # If we are still not connected then we have failed
         if not self.connected:
@@ -223,11 +238,14 @@ class SolixBLEDevice:
             )
             return False
 
-        _LOGGER.debug(f"Connected to '{self.name}'")
+        _LOGGER.debug(
+            f"Established initial connection to '{self.name}' on attempt {self._connection_attempts}!"
+        )
 
         # If we are not subscribed to telemetry then check that
         # we can and then subscribe
         if not self.available:
+            _LOGGER.debug(f"Setting up session for '{self.name}'...")
             try:
                 await self._determine_services()
                 await self._subscribe_to_services()
@@ -238,14 +256,18 @@ class SolixBLEDevice:
         # Send negotiation initiation requests until the device responds
         while self._number_of_received_packets == 0:
             await asyncio.sleep(3)
-            _LOGGER.debug("Sending negotiations initiation request...")
+            _LOGGER.debug(
+                f"Sending negotiations initiation request to '{self.name}'..."
+            )
             await self._client.write_gatt_char(
                 UUID_COMMAND, bytes.fromhex(NEGOTIATION_COMMAND_0)
             )
-            _LOGGER.debug("Sent negotiation initiation request!")
+            _LOGGER.debug(f"Sent negotiation initiation request to '{self.name}'!")
             await asyncio.sleep(3)
 
         # Wait for negotiations to finish and catch and print any errors
+        _LOGGER.debug(f"Device '{self.name}' responded to negotiation request...")
+        _LOGGER.debug(f"Waiting for negotiations with '{self.name}' to finish...")
         try:
             async with asyncio.timeout(NEGOTIATION_TIMEOUT):
                 while not self.available:
@@ -255,6 +277,7 @@ class SolixBLEDevice:
             return False
 
         # If negotiations succeeded
+        _LOGGER.debug(f"Negotiations with '{self.name}' succeeded!")
         self._expect_disconnect = False
         self._connection_attempts = 0
 
@@ -265,11 +288,15 @@ class SolixBLEDevice:
         return True
 
     async def disconnect(self) -> None:
-        """Disconnect from device.
+        """Disconnect from device and reset internal state.
 
         Disconnects from device and does not execute callbacks.
         """
+        self._supports_telemetry = False
         self._expect_disconnect = True
+        self._connection_attempts = 0
+        self._number_of_received_packets = 0
+        self._shared_key = None
 
         # If there is a client disconnect and throw it away
         if self._client:
@@ -531,22 +558,30 @@ class SolixBLEDevice:
             await self._client.start_notify(
                 UUID_TELEMETRY, self._process_telemetry_update
             )
-            _LOGGER.debug("Subscribed to notifications from device!")
+            _LOGGER.debug(f"Subscribed to notifications from device '{self.name}'!")
+        else:
+            _LOGGER.warning(
+                f"Device '{self.name}' does not support telemetry characteristic!"
+            )
 
     async def _reconnect(self) -> None:
         """Re-connect to device and run state change callbacks on timeout/failure."""
+        _LOGGER.debug(f"Attempting to re-connect to '{self.name}'!")
         try:
             async with asyncio.timeout(DISCONNECT_TIMEOUT):
+                await self.disconnect()
                 await asyncio.sleep(RECONNECT_DELAY)
                 await self.connect(run_callbacks=False)
                 if self.available:
-                    _LOGGER.debug(f"Successfully re-connected to '{self.name}'")
+                    _LOGGER.debug(f"Successfully re-connected to '{self.name}'!")
+                else:
+                    _LOGGER.warning(f"Failed to re-connect to '{self.name}'!")
 
         except TimeoutError:
             _LOGGER.exception(f"Timed out attempting to re-connect to '{self.name}'!")
             self._run_state_changed_callbacks()
 
-    async def _disconnect_callback(self, client: BaseBleakClient) -> None:
+    def _disconnect_callback(self, client: BaseBleakClient) -> None:
         """Re-connect on unexpected disconnect and run callbacks on failure.
 
         This function will re-connect if this is not an expected
@@ -556,30 +591,33 @@ class SolixBLEDevice:
 
         :param client: Bleak client.
         """
-        self._number_of_received_packets = 0
-        self._shared_key = None
 
         # Ignore disconnect callbacks from old clients
         if client != self._client:
+            _LOGGER.debug(
+                f"Disconnect of '{self.name}' came from other client. Ignoring..."
+            )
             return
 
-        # Reset to false to ensure we
+        # Reset internal state
         self._supports_telemetry = False
+        self._number_of_received_packets = 0
+        self._shared_key = None
 
         # If we expected the disconnect then we don't try to reconnect.
         if self._expect_disconnect:
-            _LOGGER.info(f"Received expected disconnect from '{client}'.")
+            _LOGGER.debug(f"Received expected disconnect from '{client}'.")
             return
 
         # Else we did not expect the disconnect and must re-connect if
         # there are attempts remaining
-        _LOGGER.debug(f"Unexpected disconnect from '{client}'.")
+        _LOGGER.info(f"Unexpected disconnect from '{client}'!")
         if (
             RECONNECT_ATTEMPTS_MAX == -1
             or self._connection_attempts < RECONNECT_ATTEMPTS_MAX
         ):
             # Try and reconnect
-            await self._reconnect()
+            self._reconnect_task = asyncio.create_task(self._reconnect())
 
         else:
             _LOGGER.warning(
