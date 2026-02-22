@@ -910,29 +910,25 @@ class C1000(SolixBLEDevice):
 
     _EXPECTED_TELEMETRY_LENGTH: int = 253
 
-    # TODO: Test!
+    @property
+    def ac_timer_remaining(self) -> int:
+        """Time remaining on AC timer.
 
-    #     @property
-    #     def ac_timer_remaining(self) -> int:
-    #         """Time remaining on AC timer.
+        :returns: Seconds remaining or default int value.
+        """
+        return self._parse_int(6) if self._data is not None else DEFAULT_METADATA_INT
 
-    #         :returns: Seconds remaining or default int value.
-    #         """
-    #         return self._parse_int(15) if self._data is not None else DEFAULT_METADATA_INT
+    @property
+    def ac_timer(self) -> datetime | None:
+        """Timestamp of AC timer.
 
-    # TODO: Test!
-
-    #     @property
-    #     def ac_timer(self) -> datetime | None:
-    #         """Timestamp of AC timer.
-
-    #         :returns: Timestamp of when AC timer expires or None.
-    #         """
-    #         if (
-    #             self.ac_timer_remaining != DEFAULT_METADATA_INT
-    #             and self.ac_timer_remaining != 0
-    #         ):
-    #             return datetime.now() + timedelta(seconds=self.ac_timer_remaining)
+        :returns: Timestamp of when AC timer expires or None.
+        """
+        if (
+            self.ac_timer_remaining != DEFAULT_METADATA_INT
+            and self.ac_timer_remaining != 0
+        ):
+            return datetime.now() + timedelta(seconds=self.ac_timer_remaining)
 
     @property
     def hours_remaining(self) -> float:
@@ -1031,15 +1027,13 @@ class C1000(SolixBLEDevice):
         """
         return self._data[50] if self._data is not None else DEFAULT_METADATA_INT
 
-        # TODO: Test!
+    @property
+    def solar_power_in(self) -> int:
+        """Solar Power In.
 
-        #     @property
-        #     def solar_power_in(self) -> int:
-        #         """Solar Power In.
-
-        #         :returns: Total solar power in or default int value.
-        #         """
-        #         return self._parse_int(79) if self._data is not None else DEFAULT_METADATA_INT
+        :returns: Total solar power in or default int value.
+        """
+        return self._parse_int(70) if self._data is not None else DEFAULT_METADATA_INT
 
     @property
     def power_in(self) -> int:
@@ -1057,17 +1051,15 @@ class C1000(SolixBLEDevice):
         """
         return self._parse_int(80) if self._data is not None else DEFAULT_METADATA_INT
 
-    # TODO: Test!
+    @property
+    def solar_port(self) -> PortStatus:
+        """Solar Port Status.
 
-    #     @property
-    #     def solar_port(self) -> PortStatus:
-    #         """Solar Port Status.
-
-    #         :returns: Status of the solar port.
-    #         """
-    #         return PortStatus(
-    #             self._data[149] if self._data is not None else DEFAULT_METADATA_INT
-    #         )
+        :returns: Status of the solar port.
+        """
+        return PortStatus(
+            self._data[140] if self._data is not None else DEFAULT_METADATA_INT
+        )
 
     @property
     def battery_percentage(self) -> int:
