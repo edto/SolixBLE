@@ -791,15 +791,13 @@ class C300(SolixBLEDevice):
         """
         return self._data[55] if self._data is not None else DEFAULT_METADATA_INT
 
-    # TODO Unable to test. Need more sun :)
+    @property
+    def solar_power_in(self) -> int:
+        """Solar Power In.
 
-    # @property
-    # def solar_power_in(self) -> int:
-    #     """Solar Power In.
-
-    #     :returns: Total solar power in or default int value.
-    #     """
-    #     return self._parse_int(70) if self._data is not None else DEFAULT_METADATA_INT
+        :returns: Total solar power in or default int value.
+        """
+        return self._parse_int(60) if self._data is not None else DEFAULT_METADATA_INT
 
     @property
     def power_in(self) -> int:
@@ -817,17 +815,15 @@ class C300(SolixBLEDevice):
         """
         return self._parse_int(70) if self._data is not None else DEFAULT_METADATA_INT
 
-    # TODO Unable to test. Need more sun :)
+    @property
+    def solar_port(self) -> PortStatus:
+        """Solar Port Status.
 
-    # @property
-    # def solar_port(self) -> PortStatus:
-    #     """Solar Port Status.
-
-    #     :returns: Status of the solar port.
-    #     """
-    #     return PortStatus(
-    #         self._data[129] if self._data is not None else DEFAULT_METADATA_INT
-    #     )
+        :returns: Status of the solar port.
+        """
+        return PortStatus(
+            self._data[119] if self._data is not None else DEFAULT_METADATA_INT
+        )
 
     @property
     def battery_percentage(self) -> int:
