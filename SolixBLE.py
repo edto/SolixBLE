@@ -16,8 +16,8 @@ from bleak import BleakClient, BleakError, BleakScanner
 from bleak.backends.client import BaseBleakClient
 from bleak.backends.device import BLEDevice
 from bleak_retry_connector import establish_connection
-from cryptography.hazmat.primitives.asymmetric import ec
 from Crypto.Cipher import AES
+from cryptography.hazmat.primitives.asymmetric import ec
 
 #: GATT Service UUID for device telemetry. Is subscribable. Handle 17.
 UUID_TELEMETRY = "8c850003-0302-41c5-b46e-cf057c562025"
@@ -49,6 +49,9 @@ DEFAULT_METADATA_INT = -1
 
 #: Float value for unknown float attributes.
 DEFAULT_METADATA_FLOAT = -1.0
+
+#: Bool value for unknown boolean attributes.
+DEFAULT_METADATA_BOOL = None
 
 #: Command used to initiate negotiations
 NEGOTIATION_COMMAND_0 = "ff0936000300010001a10442ad8c69a22462326463306231372d623735642d346162662d626136652d656337633939376332336537b9"
@@ -414,6 +417,16 @@ class SolixBLEDevice:
         :raises IndexError: If index is out of range.
         """
         return int.from_bytes(self._data[index : index + 2], byteorder="little")
+
+    def _parse_string(self, index: int, length: int) -> str:
+        """Parse ASCII text at the index in the telemetry bytes.
+
+        :param index: Start index of ASCII text in telemetry bytes.
+        :param length: Length of ASCII text.
+        :returns: String of parsed data from telemetry.
+        :raises UnicodeDecodeError: If bytes are not ASCII text.
+        """
+        return self._data[index : index + length].decode("ascii")
 
     def _parse_telemetry(self, data: bytearray) -> None:
         """Update internal values using the telemetry data.
@@ -815,6 +828,7 @@ class C300(SolixBLEDevice):
         """
         return self._parse_int(70) if self._data is not None else DEFAULT_METADATA_INT
 
+    # TODO This is showing as INPUT when AC charging
     @property
     def solar_port(self) -> PortStatus:
         """Solar Port Status.
@@ -1052,6 +1066,51 @@ class C1000(SolixBLEDevice):
         return self._parse_int(80) if self._data is not None else DEFAULT_METADATA_INT
 
     @property
+    def software_version(self) -> str:
+        """Main software version.
+
+        :returns: Firmware version or default str value.
+        """
+        if self._data is None:
+            return DEFAULT_METADATA_STRING
+
+        return ".".join([digit for digit in str(self._parse_int(95))])
+
+    @property
+    def software_version_expansion(self) -> str:
+        """Software version of any expansion batteries.
+
+        If there is no expansion battery then it will be "0".
+
+        :returns: Firmware version or default str value.
+        """
+        if self._data is None:
+            return DEFAULT_METADATA_STRING
+
+        return ".".join([digit for digit in str(self._parse_int(125))])
+
+    @property
+    def software_version_controller(self) -> str:
+        """Software version of the controller.
+
+        :returns: Firmware version or default str value.
+        """
+        if self._data is None:
+            return DEFAULT_METADATA_STRING
+
+        return ".".join([digit for digit in str(self._parse_int(130))])
+
+    @property
+    def ac_on(self) -> bool:
+        """Is the AC output on.
+
+        :returns: AC output on or default bool value.
+        """
+        return (
+            bool(self._data[135]) if self._data is not None else DEFAULT_METADATA_BOOL
+        )
+
+    @property
     def solar_port(self) -> PortStatus:
         """Solar Port Status.
 
@@ -1062,12 +1121,36 @@ class C1000(SolixBLEDevice):
         )
 
     @property
+    def temperature(self) -> int:
+        """Temperature of the unit (C).
+
+        :returns: AC output on or default bool value.
+        """
+        return (
+            int.from_bytes(self._data[144:145], byteorder="little")
+            if self._data is not None
+            else DEFAULT_METADATA_INT
+        )
+
+    @property
     def battery_percentage(self) -> int:
         """Battery Percentage.
 
         :returns: Percentage charge of battery or default int value.
         """
         return self._data[160] if self._data is not None else DEFAULT_METADATA_INT
+
+    @property
+    def serial_number(self) -> str:
+        """Device serial number.
+
+        :returns: Device serial number or default str value.
+        """
+        return (
+            self._parse_string(220, 16)
+            if self._data is not None
+            else DEFAULT_METADATA_STRING
+        )
 
 
 class Generic(SolixBLEDevice):
