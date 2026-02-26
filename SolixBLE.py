@@ -897,6 +897,17 @@ class C300(SolixBLEDevice):
         return self._parse_int("ae", begin=1)
 
     @property
+    def software_version(self) -> str:
+        """Main software version.
+
+        :returns: Firmware version or default str value.
+        """
+        if self._data is None:
+            return DEFAULT_METADATA_STRING
+
+        return ".".join([digit for digit in str(self._parse_int("b1", begin=1))])
+
+    @property
     def ac_on(self) -> bool:
         """Is the AC output on.
 
