@@ -7,6 +7,7 @@
 # ruff: noqa: G004
 import asyncio
 import inspect
+import json
 import logging
 from collections.abc import Callable
 from datetime import datetime, timedelta
@@ -485,11 +486,18 @@ class SolixBLEDevice:
             else:
                 _LOGGER.debug(f"Changes detected compared to previous status update!")
                 differences = {
-                    k: (self._data[k], parsed_data[k])
+                    k: {
+                        "bytes": f"{self._data[k]} -> {parsed_data[k]}",
+                        "hex": f"{self._data[k].hex()} -> {parsed_data[k].hex()}",
+                        "uint": f"{int.from_bytes(self._data[k][1:], byteorder="little")} -> {int.from_bytes(parsed_data[k][1:], byteorder="little")}",
+                        "int": f"{int.from_bytes(self._data[k][1:], byteorder="little", signed=True)} -> {int.from_bytes(parsed_data[k][1:], byteorder="little", signed=True)}",
+                    }
                     for k in self._data.keys() & parsed_data.keys()
                     if self._data[k] != parsed_data[k]
                 }
-                _LOGGER.debug(f"Value changes (key: (old, new)): {differences}")
+                _LOGGER.debug(
+                    f"Data changes: \n{json.dumps(differences, indent=4, sort_keys=True)}"
+                )
 
         # Update internal data store
         self._data = parsed_data
@@ -530,7 +538,19 @@ class SolixBLEDevice:
 
         old_data = self._data
         self._parse_telemetry(data)
-        _LOGGER.debug(f"Parsed parameters from telemetry: {self._data}")
+        if _LOGGER.isEnabledFor(logging.DEBUG):
+            pretty_data = {
+                key: {
+                    "bytes": f"{value}",
+                    "hex": f"{value.hex()}",
+                    "uint": f"{int.from_bytes(value[1:], byteorder="little")}",
+                    "int": f"{int.from_bytes(value[1:], byteorder="little", signed=True)}",
+                }
+                for key, value in self._data.items()
+            }
+            _LOGGER.debug(
+                f"Parsed telemetry packet: \n{json.dumps(pretty_data, indent=4, sort_keys=True)}"
+            )
 
         # Print status update
         _LOGGER.debug(self)
