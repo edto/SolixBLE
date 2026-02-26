@@ -1201,12 +1201,52 @@ class C1000(SolixBLEDevice):
         return self._parse_int("bd", begin=1, signed=True)
 
     @property
+    def temperature_expansion(self) -> int:
+        """Temperature of the expansion battery if present (C).
+
+        :returns: Temperature of expansion battery in degrees C or 0 if not present or default int value.
+        """
+        return self._parse_int("be", begin=1, signed=True)
+
+    @property
     def battery_percentage(self) -> int:
         """Battery Percentage.
 
         :returns: Percentage charge of battery or default int value.
         """
         return self._parse_int("c1", begin=1)
+
+    @property
+    def battery_percentage_expansion(self) -> int:
+        """Battery Percentage of the expansion battery.
+
+        :returns: Percentage charge of expansion battery or 0 if not present or default int value.
+        """
+        return self._parse_int("c2", begin=1)
+
+    @property
+    def battery_health(self) -> int:
+        """Battery health as a percentage.
+
+        :returns: Percentage of battery health or default int value.
+        """
+        return self._parse_int("c3", begin=1)
+
+    @property
+    def battery_health_expansion(self) -> int:
+        """Battery health as a percentage for expansion battery.
+
+        :returns: Percentage of expansion battery health or 0 if not present or default int value.
+        """
+        return self._parse_int("c4", begin=1)
+
+    @property
+    def num_expansion(self) -> int:
+        """Number of expansion batteries.
+
+        :returns: Number of expansion batteries or default int value.
+        """
+        return self._parse_int("c5", begin=1)
 
     @property
     def serial_number(self) -> str:
