@@ -18,6 +18,7 @@ from SolixBLE import (
     C300DC,
     C1000,
     C1000G2,
+    F2000,
     Generic,
     SolixBLEDevice,
     discover_devices,
@@ -28,6 +29,7 @@ MODELS = {
     "C300DC": C300DC,
     "C1000": C1000,
     "C1000 G2": C1000G2,
+    "F2000 (767 PowerHouse)": F2000,
     "Unknown": Generic,
 }
 

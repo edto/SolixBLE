@@ -32,36 +32,36 @@ No pairing is required in order to receive telemetry data.
 Device support
 --------------
 
-======================= ======== ========== ========= =========
-Parameter               C300(X)  C300(X) DC C1000(X)  C1000 G2 
-======================= ======== ========== ========= =========
-AC Timer.               ✅        ❌          ✅        ❌
-DC Timer.               ✅        ❌          ❌        ❌
-Time remaining.         ✅        ✅          ✅        ❌
-AC Power in.            ✅        N/A         ✅        ✅
-AC Power out.           ✅        N/A         ✅        ✅
-USB Power out.          ✅        ✅          ✅        ✅       
-DC Power Out.           ✅        ✅          ❌        ✅
-DC Power In.            ✅        ✅          ✅        ✅
-DC Power In status.     ✅        ✅          ✅        ✅
-Total Power In.         ✅        ✅          ✅        ❌
-Total Power Out.        ✅        ✅          ✅        ✅
-Firmware version        ✅        ❌          ✅        ❌
-Expansion firmware      N/A       N/A         ✅        N/A
-AC on/off state         ✅        N/A         ✅        ✅
-Temperature             ✅        ✅          ✅        ✅
-Expansion temperature   N/A       N/A         ✅        N/A
-Charging status         ✅        ✅          ❌        ❌
-Battery percentage      ✅        ✅          ✅        ✅
-Expansion percentage    N/A       N/A         ✅        N/A
-Battery health          ❌        ✅           ✅       ✅
-Expansion health        N/A       N/A         ✅        N/A
-Expansion num           N/A       N/A         ✅        N/A
-USB Port status         ✅        ✅          ❌        ✅
-DC Port status          ✅        ❌          ❌        ✅
-Light status            ✅        ✅          ❌        N/A
-Serial number           ✅        ❌          ✅        ✅
-======================= ======== ========== ========= =========
+======================= ======== ========== ========= ========= ============
+Parameter               C300(X)  C300(X) DC C1000(X)  C1000 G2  F2000 (767)
+======================= ======== ========== ========= ========= ============
+AC Timer.               ✅        ❌          ✅        ❌         ❌
+DC Timer.               ✅        ❌          ❌        ❌         ❌
+Time remaining.         ✅        ✅          ✅        ❌         ✅
+AC Power in.            ✅        N/A         ✅        ✅         ✅
+AC Power out.           ✅        N/A         ✅        ✅         ✅
+USB Power out.          ✅        ✅          ✅        ✅         ✅       
+DC Power Out.           ✅        ✅          ❌        ✅         ✅
+DC Power In.            ✅        ✅          ✅        ✅         ✅
+DC Power In status.     ✅        ✅          ✅        ✅         ❌
+Total Power In.         ✅        ✅          ✅        ❌         ❌
+Total Power Out.        ✅        ✅          ✅        ✅         ❌
+Firmware version        ✅        ❌          ✅        ❌         ✅
+Expansion firmware      N/A       N/A         ✅        N/A        ✅
+AC on/off state         ✅        N/A         ✅        ✅         ❌
+Temperature             ✅        ✅          ✅        ✅         ✅
+Expansion temperature   N/A       N/A         ✅        N/A       ✅
+Charging status         ✅        ✅          ❌        ❌         ❌
+Battery percentage      ✅        ✅          ✅        ✅         ✅
+Expansion percentage    N/A       N/A         ✅        N/A       ✅
+Battery health          ❌        ✅           ✅       ✅         ✅
+Expansion health        N/A       N/A         ✅        N/A       ✅
+Expansion num           N/A       N/A         ✅        N/A       ✅
+USB Port status         ✅        ✅          ❌        ✅         ❌
+DC Port status          ✅        ❌          ❌        ✅         ❌
+Light status            ✅        ✅          ❌        N/A        ❌
+Serial number           ✅        ❌          ✅        ✅         ✅
+======================= ======== ========== ========= ========= ============
 
 
 Contents
