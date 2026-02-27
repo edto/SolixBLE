@@ -21,6 +21,7 @@ from SolixBLE import (
     F2000,
     F3800,
     Generic,
+    PrimeCharger250w,
     Solarbank2,
     Solarbank3,
     SolixBLEDevice,
@@ -36,6 +37,7 @@ MODELS = {
     "F3800": F3800,
     "Solarbank 2": Solarbank2,
     "Solarbank 3": Solarbank3,
+    "PrimeCharger250w": PrimeCharger250w,
     "Unknown": Generic,
 }
 

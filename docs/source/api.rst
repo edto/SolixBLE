@@ -20,6 +20,7 @@ the list of properties for that class.
    f3800
    solarbank2
    solarbank3
+   prime_charger_250w
    generic
    enums
    helpers

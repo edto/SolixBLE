@@ -46,6 +46,7 @@ No pairing is required in order to receive telemetry data.
 - F3800
 - Solarbank 2
 - Solarbank 3
+- Prime Charger 250w
 - Maybe more? IDK
 
 

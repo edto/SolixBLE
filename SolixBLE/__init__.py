@@ -13,6 +13,7 @@ from .devices import (
     F2000,
     F3800,
     Generic,
+    PrimeCharger250w,
     Solarbank2,
     Solarbank3,
 )
@@ -35,6 +36,7 @@ __all__ = [
     "F3800",
     "Solarbank2",
     "Solarbank3",
+    "PrimeCharger250w",
     "Generic",
     "ChargingStatus",
     "ChargingStatusC300DC",
