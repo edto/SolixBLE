@@ -35,32 +35,32 @@ Power station support
 ======================= ======== ========== ========= ========= ============ ====== 
 Parameter               C300(X)  C300(X) DC C1000(X)  C1000 G2  F2000 (767)  F3800  
 ======================= ======== ========== ========= ========= ============ ====== 
-AC Timer                ✅        N/A         ✅        ❌         ❌           ❌     
-DC Timer                ✅        ❌          ❌        ❌         ❌           ❌     
-Time remaining          ✅        ✅          ✅        ❌         ✅           ✅     
-AC Power in             ✅        N/A         ✅        ✅         ✅           ✅     
-AC Power out            ✅        N/A         ✅        ✅         ✅           ✅     
-USB Power out           ✅        ✅          ✅        ✅         ✅           ✅     
-DC Power Out            ✅        ✅          ❌        ✅         ✅           ✅     
-DC Power In             ✅        ✅          ✅        ✅         ✅           ✅     
-DC Power In status      ✅        ✅          ✅        ✅         ❌           ❌     
+Charging status         ✅        ✅          ❌        ❌         ❌           ✅ 
+Time remaining          ✅        ✅          ✅        ❌         ✅           ✅  
+Battery percentage      ✅        ✅          ✅        ✅         ✅           ✅ 
+Battery health          ❌        ✅           ✅       ✅         ✅           ❌
+Temperature             ✅        ✅          ✅        ✅         ✅           ✅
 Total Power In          ✅        ✅          ✅        ❌         ❌           ✅     
-Total Power Out         ✅        ✅          ✅        ✅         ❌           ✅     
-Firmware version        ✅        ❌          ✅        ❌         ✅           ✅     
-Expansion firmware      N/A       N/A         ✅        N/A       ✅           ✅     
-AC on/off state         ✅        N/A         ✅        ✅         ❌           ✅     
-Temperature             ✅        ✅          ✅        ✅         ✅           ✅     
-Expansion temperature   N/A       N/A         ✅        N/A       ✅           ❌     
-Charging status         ✅        ✅          ❌        ❌         ❌           ✅     
-Battery percentage      ✅        ✅          ✅        ✅         ✅           ✅     
-Expansion percentage    N/A       N/A         ✅        N/A       ✅           ✅     
-Battery health          ❌        ✅           ✅       ✅         ✅           ❌     
-Expansion health        N/A       N/A         ✅        N/A       ✅           ❌     
-Expansion num           N/A       N/A         ✅        N/A       ✅           ❌     
-USB Port status         ✅        ✅          ❌        ✅         ❌           ✅     
-DC Port status          ✅        ❌          ❌        ✅         ❌           ✅     
-Light status            ✅        ✅          ❌        N/A        ❌           ❌     
+Total Power Out         ✅        ✅          ✅        ✅         ❌           ✅ 
+AC Power in             ✅        N/A         ✅        ✅         ✅           ✅     
+AC Power out            ✅        N/A         ✅        ✅         ✅           ✅  
+AC on/off state         ✅        N/A         ✅        ✅         ❌           ✅   
+AC Timer                ✅        N/A         ✅        ❌         ❌           ❌  
+DC Power in             ✅        ✅          ✅        ✅         ✅           ✅   
+DC Power out            ✅        ✅          ❌        ✅         ✅           ✅  
+DC Power in status      ✅        ✅          ✅        ✅         ❌           ❌ 
+DC Power out status     ✅        ❌          ❌        ✅         ❌           ✅   
+DC Timer                ✅        ❌          ❌        ❌         ❌           ❌ 
+USB Power out           ✅        ✅          ✅        ✅         ✅           ✅     
+USB Port status         ✅        ✅          ❌        ✅         ❌           ✅ 
+Light status            ✅        ✅          ❌        N/A        ❌           ❌ 
+Firmware version        ✅        ❌          ✅        ❌         ✅           ✅  
 Serial number           ✅        ❌          ✅        ✅         ✅           ✅     
+Expansion temperature   N/A       N/A         ✅        N/A       ✅           ❌  
+Expansion percentage    N/A       N/A         ✅        N/A       ✅           ✅  
+Expansion health        N/A       N/A         ✅        N/A       ✅           ❌    
+Expansion firmware      N/A       N/A         ✅        N/A       ✅           ✅     
+Expansion num           N/A       N/A         ✅        N/A       ✅           ❌ 
 ======================= ======== ========== ========= ========= ============ ======
 
 
