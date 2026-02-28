@@ -523,11 +523,11 @@ class SolixBLEDevice:
             checksum_value = checksum_value ^ b
         return checksum_value.to_bytes(1)
 
-    async def _send_command(self, command_type: bytes, payload_bytes: bytes) -> None:
+    async def _send_command(self, cmd: bytes, payload: bytes) -> None:
         """Send a command to the device.
 
-        :param command_type: 2 bytes containing command type.
-        :param payload_bytes: Variable number of bytes containing arguments.
+        :param cmd: 2 bytes containing command type.
+        :param payload: Variable number of bytes containing arguments.
         :raises ConnectionError: If not connected to device.
         """
         if not self.available:
@@ -542,20 +542,18 @@ class SolixBLEDevice:
         new_timestamp = (base_timestamp + time_passed).to_bytes(
             length=4, byteorder="little"
         )
-        new_payload = payload_bytes + bytes.fromhex("fe0503") + new_timestamp
-        await self._send_encrypted_packet(command_type, new_payload)
+        new_payload = payload + bytes.fromhex("fe0503") + new_timestamp
+        await self._send_encrypted_packet(cmd, new_payload)
 
-    async def _send_encrypted_packet(
-        self, message_type: bytes, payload_bytes: bytes
-    ) -> None:
+    async def _send_encrypted_packet(self, cmd: bytes, payload: bytes) -> None:
         """Send an encrypted packet using negotiated shared secret and IV."""
         _LOGGER.debug(
-            f"Building packet with type: {message_type.hex()} and payload: {payload_bytes.hex()}"
+            f"Building packet with cmd: {cmd.hex()} and payload: {payload.hex()}"
         )
 
         # Pad payload
         padder = padding.PKCS7(128).padder()
-        padded_data = padder.update(payload_bytes)
+        padded_data = padder.update(payload)
         padded_data += padder.finalize()
 
         # Encrypt payload
@@ -571,7 +569,7 @@ class SolixBLEDevice:
             bytes.fromhex("ff09")
             + length_bytes
             + bytes.fromhex("03000f")
-            + message_type
+            + cmd
             + encrypted_payload
         )
         packet = packet + self._checksum(packet)
