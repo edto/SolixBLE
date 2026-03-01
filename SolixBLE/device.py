@@ -133,7 +133,6 @@ class SolixBLEDevice:
                     use_services_cache=False,
                     disconnected_callback=self._disconnect_callback,
                 )
-                await asyncio.sleep(3)
 
             except BleakError:
                 _LOGGER.exception(
