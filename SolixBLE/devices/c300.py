@@ -21,6 +21,7 @@ CMD_DC_OUTPUT = "404b"
 CMD_DISPLAY_ON_OFF = "4052"
 CMD_LIGHT_MODE = "404f"
 CMD_DISPLAY_TIMEOUT = "4046"
+CMD_DISPLAY_MODE = "404c"
 
 PAYLOAD_ON = "a10121a2020101"
 PAYLOAD_OFF = "a10121a2020100"
@@ -448,4 +449,21 @@ class C300(SolixBLEDevice):
             cmd=bytes.fromhex(CMD_DISPLAY_TIMEOUT),
             payload=bytes.fromhex(PAYLOAD_TIMEOUT_TIME)
             + timeout.value.to_bytes(length=2, byteorder="little", signed=False),
+        )
+
+    async def set_display_mode(self, mode: LightStatus) -> None:
+        """Set the status/mode of the LCD display.
+
+        :param mode: Mode/status to set display to (off/low/med/high).
+        :raises ValueError: If requested mode is invalid.
+        :raises ConnectionError: If not connected to device.
+        :raises BleakError: If command transmission fails.
+        """
+        if mode is LightStatus.UNKNOWN:
+            raise ValueError("You cannot set the display brightness status to unknown")
+        if mode is LightStatus.SOS:
+            raise ValueError("You cannot set the display brightness status to SOS")
+        await self._send_command(
+            cmd=bytes.fromhex(CMD_DISPLAY_MODE),
+            payload=bytes.fromhex(PAYLOAD_LIGHT_MODE) + mode.value.to_bytes(),
         )
