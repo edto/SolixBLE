@@ -162,7 +162,7 @@ class SolixBLEDevice:
                     # If we have not received any packet from the device in
                     # any stage then restart negotiations from the start
                     if (
-                        self._last_data_timestamp is None
+                        self._last_packet_timestamp is None
                         or (time.time() - self._last_packet_timestamp)
                         > NEGOTIATION_RESPONSE_TIMEOUT
                     ):
