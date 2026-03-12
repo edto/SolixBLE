@@ -179,6 +179,9 @@ async def test_disconnect(fast_timeouts, fast_sleep):
                 assert (
                     not device.negotiated
                 ), f"Expected negotiated to be False after {i} seconds"
+                assert (
+                    device._client is None
+                ), f"Expected client to be None after {i} seconds"
 
         def my_callback(*args, **kwargs):
             """We expect this to not be called."""
@@ -202,9 +205,11 @@ async def test_disconnect(fast_timeouts, fast_sleep):
         # disconnect
         device.add_callback(my_callback)
 
-        # We then call disconnect and expect to remain disconnected
+        # We then call disconnect and expect to remain disconnected and that
+        # disconnect on the client was called
         await device.disconnect()
         await assert_still_disconnected()
+        mock_bluetooth._current_mock_bleak_client.disconnect.assert_called_once()
 
         # We call disconnect again and expect no changes (still disconnected)
         await device.disconnect()
