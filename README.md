@@ -51,6 +51,7 @@ See the [support table](https://solixble.readthedocs.io/en/latest) in the docume
 - F3800
 - Solarbank 2
 - Solarbank 3
+- Prime Charger 160w
 - Prime Charger 250w
 - Potentially more!
 

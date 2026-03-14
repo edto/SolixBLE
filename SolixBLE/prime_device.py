@@ -1,0 +1,288 @@
+"""Base Anker Prime device implementation of SolixBLE module.
+
+.. moduleauthor:: Harvey Lelliott (flip-dots) <harveylelliott@duck.com>
+
+"""
+
+import logging
+
+from Cryptodome.Cipher import AES
+from cryptography.hazmat.primitives.asymmetric.ec import (
+    ECDH,
+    SECP256R1,
+    EllipticCurvePublicKey,
+    derive_private_key,
+)
+
+from SolixBLE.const import UUID_COMMAND
+from SolixBLE.device import SolixBLEDevice
+
+_LOGGER = logging.getLogger(__name__)
+
+#: Command used to initiate negotiations
+NEGOTIATION_COMMAND_0 = (
+    "ff09200003000140010a82d0ab535303e3aa9f0c2f9c868465bc8476f556fb7d"
+)
+
+#: Response to receiving 1st negotiation message
+NEGOTIATION_COMMAND_1 = (
+    "ff09270003000140030a82d0ab53538ab3de100ac9bb87a0b8e36c1dd8167a9c25a9839d9a14d5"
+)
+
+#: Response to receiving 2nd negotiation message
+NEGOTIATION_COMMAND_2 = (
+    "ff09200003000140290a82d0ab535303e3aa9f0c2f9c868465bc8476f556fb55"
+)
+
+#: Response to receiving 3rd negotiation message
+NEGOTIATION_COMMAND_3 = "ff092d0003000140050a82d0ab53538ab3de100ae04aca6791257881a90164eac7460450e0c82f2c03de4f9604"
+
+#: Response to receiving 4th negotiation message
+NEGOTIATION_COMMAND_4 = "ff095c0003000140210ac6ea31e4300bb2877d6ddeb628b0d7be8d768333f00ceab5454d20fbd97e091457b1f3b6efb6511eb9e98ac2b2c46eee211ae359ad246e1ae9886b4a29e41eddd5a5064d8b9ffdbfb43eb6b8e307fcde9de7"
+
+#: Response to receiving 5th negotiation message
+NEGOTIATION_COMMAND_5 = "ff094000030001402257ec69586f3500c8f858e0ba047f237f4e2ed8c50d2f39ba3587e4010275bea22242936f08788849272fb3f4cf7493be4a60bb9c9f0693"
+
+#: Response to receiving 6th negotiation message
+NEGOTIATION_COMMAND_6 = "ff094600030001402757ec69586f3501e8cf6185d8c4035707377af9af3a2e40b02b86e7531974f1c22440de6e43705566b77cf940e235b65abf4d413ece5f2c3781712f3742"
+
+#: First response to receiving 7th negotiation message
+NEGOTIATION_COMMAND_7 = (
+    "ff09230003000f420057e9b8dfdeacda7991d3eb7f12093e55ff002aa9799bcc9216e3"
+)
+
+#: Second response to receiving 7st negotiation message
+NEGOTIATION_COMMAND_8 = "ff09530003000f420a57e9b883d958e48e5b7de48d980206577e2dafbb3d604dea3686f3011969f0db2311906d142b5730ee2bfb11e3fbbe7485aac8877995310669156ec74645c962b419e579b385fd079967"
+
+#: Anker Prime devices encrypt the negotiation using a static key
+NEGOTIATION_KEY = "b8ff7422955d4eb6d554a2c470280559"
+
+#: Anker Prime devices encrypt the negotiation using a static nonce
+NEGOTIATION_NONCE = "6ba3e3f2f3a60f2971ce5d1f"
+
+#: Additional Authenticated Data bytes used by protocol
+AAD = "3322110077665544bbaa9988ffeeddcc"
+
+#: The private key this program uses to perform the ECDH negotiation to
+#: get a shared secret which is then used as an AES key for encrypting
+#: communications between the program and the power station. Yes I know it
+#: is bad security practice to hardcode keys but its a freaking power station
+#: talking over Bluetooth with a range of like 10m... I don't care.
+PRIVATE_KEY = "754744d72984c378bc4fa77d7fcdf6bbb6d9df119fa9be4948eb8a3b4cd6071f"
+
+
+class PrimeDevice(SolixBLEDevice):
+    """
+    This is a base class based upon SolixBLEDevice which contains logic
+    unique to Anker Prime devices that is designed to be overridden for
+    specific implementations, e.g 160w, 250w, etc.
+    """
+
+    ###########################
+    # Encryption / Decryption #
+    ###########################
+
+    def _decrypt_negotiation_payload(self, payload: bytes) -> bytes:
+        """
+        Decrypt the payload of a negotiation message.
+
+        Anker Prime devices encrypt the negotiation payloads using static keys.
+        This is only used for negotiation.
+        """
+        cipher = AES.new(
+            bytes.fromhex(NEGOTIATION_KEY),
+            AES.MODE_GCM,
+            nonce=bytes.fromhex(NEGOTIATION_NONCE),
+        )
+        return cipher.decrypt(payload)
+
+    def _decrypt_payload(self, payload: bytes) -> bytes:
+        """
+        Decrypt the payload of a session message (e.g telemetry, commands, etc).
+
+        Anker Prime devices use AES GCM with the first 16 bytes of the shared
+        secret as the AES key and next 12 bytes as the nonce. The last 16 bytes
+        of the payload are a MAC used to ensure the message has not been tampered
+        with.
+        """
+        mac = payload[-16:]
+        encrypted_payload = payload[:-16]
+        cipher = AES.new(
+            self._shared_secret[:16], AES.MODE_GCM, nonce=self._shared_secret[16:28]
+        )
+        cipher.update(bytes.fromhex(AAD))
+
+        return cipher.decrypt_and_verify(encrypted_payload, mac)
+
+    ###############
+    # Negotiation #
+    ###############
+
+    async def _initiate_negotiations(self) -> None:
+        """
+        Send the negotiation initiation command.
+        """
+        await self._client.write_gatt_char(
+            UUID_COMMAND, bytes.fromhex(NEGOTIATION_COMMAND_0)
+        )
+
+    async def _process_negotiation(self, cmd: bytes, payload: bytes) -> None:
+        """
+        Negotiate encryption with the device.
+        """
+
+        match cmd.hex():
+
+            # There is a "stage 0" in which we automatically send a negotiation
+            # request as soon as we establish the initial connection. That
+            # should lead to the power station sending a response landing us
+            # in stage 1.
+
+            # Negotiations at this point are encrypted using the static key and nonce
+
+            # Negotiation stage 1
+            case "4801":
+                _LOGGER.debug(
+                    "Entered negotiation stage 1 due to response from device!"
+                )
+                payload = self._decrypt_negotiation_payload(payload)
+                parameters = self._parse_payload(payload)
+                _LOGGER.debug(f"Parameters: {self._parameters_to_str(parameters)}")
+                _LOGGER.debug("Sending stage 1 response message...")
+                return await self._client.write_gatt_char(
+                    UUID_COMMAND,
+                    bytes.fromhex(NEGOTIATION_COMMAND_1),
+                )
+
+            # Negotiation stage 2
+            case "4803":
+                _LOGGER.debug(
+                    "Entered negotiation stage 2 due to response from device!"
+                )
+                payload = self._decrypt_negotiation_payload(payload)
+                parameters = self._parse_payload(payload)
+                _LOGGER.debug(f"Parameters: {self._parameters_to_str(parameters)}")
+                _LOGGER.debug("Sending stage 2 response message...")
+                return await self._client.write_gatt_char(
+                    UUID_COMMAND,
+                    bytes.fromhex(NEGOTIATION_COMMAND_2),
+                )
+
+            # Negotiation stage 3
+            case "4829":
+                _LOGGER.debug(
+                    "Entered negotiation stage 3 due to response from device!"
+                )
+                payload = self._decrypt_negotiation_payload(payload)
+                parameters = self._parse_payload(payload)
+                _LOGGER.debug(f"Parameters: {self._parameters_to_str(parameters)}")
+                _LOGGER.debug("Sending stage 3 response message...")
+                return await self._client.write_gatt_char(
+                    UUID_COMMAND,
+                    bytes.fromhex(NEGOTIATION_COMMAND_3),
+                )
+
+            # Negotiation stage 4
+            case "4805":
+                _LOGGER.debug(
+                    "Entered negotiation stage 4 due to response from device!"
+                )
+                payload = self._decrypt_negotiation_payload(payload)
+                parameters = self._parse_payload(payload)
+                _LOGGER.debug(f"Parameters: {self._parameters_to_str(parameters)}")
+                _LOGGER.debug("Sending stage 4 response message...")
+                return await self._client.write_gatt_char(
+                    UUID_COMMAND,
+                    bytes.fromhex(NEGOTIATION_COMMAND_4),
+                )
+
+            # Negotiation stage 5
+            case "4821":
+                _LOGGER.debug(
+                    "Entered negotiation stage 5 due to response from device!"
+                )
+                payload = self._decrypt_negotiation_payload(payload)
+                parameters = self._parse_payload(payload)
+                _LOGGER.debug(f"Parameters: {self._parameters_to_str(parameters)}")
+
+                # Extract public key of device from payload
+                device_public_key_bytes = bytes.fromhex("04") + parameters["a1"]
+                _LOGGER.debug(f"Public key of device: {device_public_key_bytes.hex()}")
+                device_public_key = EllipticCurvePublicKey.from_encoded_point(
+                    SECP256R1(), device_public_key_bytes
+                )
+
+                # Calculate the shared secret
+                # The first half of the shared secret is the encryption key
+                # and the 12 bytes after that is the nonce
+                private_value = int.from_bytes(
+                    bytes.fromhex(PRIVATE_KEY),
+                    byteorder="big",
+                )
+                private_key = derive_private_key(private_value, SECP256R1())
+                self._shared_secret = private_key.exchange(ECDH(), device_public_key)
+                _LOGGER.debug(f"Shared secret: {self._shared_secret.hex()}")
+
+                _LOGGER.debug("Sending stage 5 response message...")
+                return await self._client.write_gatt_char(
+                    UUID_COMMAND,
+                    bytes.fromhex(NEGOTIATION_COMMAND_5),
+                )
+
+            # Negotiations past this point are encrypted using the shared secret
+
+            # Negotiation stage 6
+            case "4822":
+                _LOGGER.debug(
+                    "Entered negotiation stage 6 due to response from device!"
+                )
+                payload = self._decrypt_payload(payload)
+                parameters = self._parse_payload(payload)
+                _LOGGER.debug(f"Parameters: {self._parameters_to_str(parameters)}")
+
+                _LOGGER.debug("Sending stage 6 response message...")
+                return await self._client.write_gatt_char(
+                    UUID_COMMAND,
+                    bytes.fromhex(NEGOTIATION_COMMAND_6),
+                )
+
+            # Negotiation stage 7
+            case "4827":
+                _LOGGER.debug(
+                    "Entered negotiation stage 7 due to response from device!"
+                )
+                payload = self._decrypt_payload(payload)
+                parameters = self._parse_payload(payload)
+                _LOGGER.debug(f"Parameters: {self._parameters_to_str(parameters)}")
+
+                _LOGGER.debug("Sending stage 7 response messages...")
+                await self._client.write_gatt_char(
+                    UUID_COMMAND,
+                    bytes.fromhex(NEGOTIATION_COMMAND_7),
+                )
+                await self._client.write_gatt_char(
+                    UUID_COMMAND,
+                    bytes.fromhex(NEGOTIATION_COMMAND_8),
+                )
+                return
+
+            case _:
+                _LOGGER.warning(
+                    f"Received unexpected negotiation request response from device! cmd: '{cmd}', parameters: '{self._parameters_to_str(parameters)}'"
+                )
+
+    #####################
+    # Packet processing #
+    #####################
+
+    async def _process_telemetry_packet(self, payload: bytes) -> None:
+        """
+        Process a telemetry packet from an Anker Prime device.
+
+        Anker Prime devices pack all telemetry data into a single packet
+        requiring no special logic to handle.
+        """
+        decrypted_payload = self._decrypt_payload(payload)
+        _LOGGER.debug(f"Decrypted payload: {decrypted_payload.hex()}")
+        parameters = self._parse_payload(decrypted_payload)
+        return await self._process_telemetry(parameters)

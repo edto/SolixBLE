@@ -73,8 +73,7 @@ class SolixBLEDevice:
         self._auto_reconnect_task: asyncio.Task | None = None
         self._disconnect_event: asyncio.Event = asyncio.Event()
         self._connection_attempts: int = 0
-        self._shared_key: bytes | None = None
-        self._iv: bytes | None = None
+        self._shared_secret: bytes | None = None
 
     def add_callback(self, function: Callable[[], None]) -> None:
         """Register a callback to be run on state updates.
@@ -93,6 +92,14 @@ class SolixBLEDevice:
         :raises ValueError: If callback does not exist.
         """
         self._state_changed_callbacks.remove(function)
+
+    async def _initiate_negotiations(self) -> None:
+        """Send the negotiation initiation command."""
+        await self._client.write_gatt_char(
+            UUID_COMMAND,
+            bytes.fromhex(NEGOTIATION_COMMAND_0),
+            response=True,
+        )
 
     async def connect(self, max_attempts: int = 3, run_callbacks: bool = True) -> bool:
         """Connect to device.
@@ -166,11 +173,7 @@ class SolixBLEDevice:
                         _LOGGER.debug(
                             f"Sending negotiation initiation request to '{self.name}'..."
                         )
-                        await self._client.write_gatt_char(
-                            UUID_COMMAND,
-                            bytes.fromhex(NEGOTIATION_COMMAND_0),
-                            response=True,
-                        )
+                        await self._initiate_negotiations()
 
                     # Wait at this long to see if we get any response to
                     # our initial request in stage 0. This weird layout
@@ -243,12 +246,7 @@ class SolixBLEDevice:
 
         :returns: True/False if session has been negotiated and connected.
         """
-        return (
-            self.connected
-            and self._shared_key is not None
-            and self._iv is not None
-            and self._negotiation_timestamp is not None
-        )
+        return self.connected and self._shared_secret is not None
 
     @property
     def available(self) -> bool:
@@ -440,12 +438,66 @@ class SolixBLEDevice:
 
     def _decrypt_payload(self, payload: bytes) -> bytes:
         """Decrypt telemetry packet using negotiated shared secret and IV."""
-        cipher = AES.new(self._shared_key, AES.MODE_CBC, iv=self._iv)
+        cipher = AES.new(
+            self._shared_secret[:16], AES.MODE_CBC, iv=self._shared_secret[16:]
+        )
         return cipher.decrypt(payload)
 
-    async def _process_telemetry(
-        self, cmd: bytes, parameters: dict[str, bytes]
-    ) -> None:
+    def _encrypt_payload(self, payload: bytes) -> bytes:
+        """Encrypt telemetry packet using negotiated shared secret and IV."""
+        cipher = AES.new(
+            self._shared_secret[:16], AES.MODE_CBC, iv=self._shared_secret[16:]
+        )
+        return cipher.encrypt(payload)
+
+    async def _process_telemetry_packet(self, payload: bytes) -> None:
+        """Process a telemetry packet from the device.
+
+        This performs the default processing of telemetry packets in which
+        telemetry payloads are spread across multiple packets. This is
+        overridden for devices which do not use multi-packet payloads for
+        telemetry.
+        """
+
+        # Anker devices seem to split data across multiple
+        # packets so we need to wait until we have both
+        # packets before we can decrypt all of the data
+        if len(payload) < 50:
+            self._telemetry_payload_small = payload
+
+        # If we receive a big packet it invalidates the
+        # last small one since the big one comes before
+        # the small one
+        elif len(payload) > 230:
+            self._telemetry_payload_large = payload
+            self._telemetry_payload_small = None
+
+        else:
+            _LOGGER.warning(
+                f"Telemetry payload has an unexpected length of {len(payload)}!"
+            )
+
+        if (
+            self._telemetry_payload_small is None
+            or self._telemetry_payload_large is None
+        ):
+            _LOGGER.debug("Missing other payload!")
+            return
+
+        new_payload = self._telemetry_payload_large + self._telemetry_payload_small
+
+        # If we are accepting the new payload we invalidate
+        # the partial payloads
+        self._telemetry_payload_large = None
+        self._telemetry_payload_small = None
+
+        _LOGGER.debug(f"Merged payload: {new_payload.hex()}")
+        decrypted_payload = self._decrypt_payload(new_payload)
+        _LOGGER.debug(f"Decrypted payload: {decrypted_payload.hex()}")
+        parameters = self._parse_payload(decrypted_payload)
+        return await self._process_telemetry(parameters)
+
+    async def _process_telemetry(self, parameters: dict[str, bytes]) -> None:
         """Process telemetry data from the device."""
 
         state_changed = self._data is None or parameters != self._data
@@ -520,54 +572,14 @@ class SolixBLEDevice:
                 return await self._process_negotiation(cmd, payload)
 
             # Encrypted messages
-            case "03010f":
+            case "03010f" | "030111":
 
                 match cmd.hex():
 
                     # Telemetry messages
-                    case "c402":
+                    case "c402" | "4300":
                         _LOGGER.debug("Received telemetry message!")
-
-                        # Anker devices seem to split data across multiple
-                        # packets so we need to wait until we have both
-                        # packets before we can decrypt all of the data
-                        if len(payload) < 50:
-                            self._telemetry_payload_small = payload
-
-                        # If we receive a big packet it invalidates the
-                        # last small one since the big one comes before
-                        # the small one
-                        elif len(payload) > 230:
-                            self._telemetry_payload_large = payload
-                            self._telemetry_payload_small = None
-
-                        else:
-                            _LOGGER.warning(
-                                f"Telemetry payload has an unexpected length of {len(payload)}!"
-                            )
-
-                        if (
-                            self._telemetry_payload_small is None
-                            or self._telemetry_payload_large is None
-                        ):
-                            _LOGGER.debug("Missing other payload!")
-                            return
-
-                        new_payload = (
-                            self._telemetry_payload_large
-                            + self._telemetry_payload_small
-                        )
-
-                        # If we are accepting the new payload we invalidate
-                        # the partial payloads
-                        self._telemetry_payload_large = None
-                        self._telemetry_payload_small = None
-
-                        _LOGGER.debug(f"Merged payload: {new_payload.hex()}")
-                        decrypted_payload = self._decrypt_payload(new_payload)
-                        _LOGGER.debug(f"Decrypted payload: {decrypted_payload.hex()}")
-                        parameters = self._parse_payload(decrypted_payload)
-                        return await self._process_telemetry(cmd, parameters)
+                        return await self._process_telemetry_packet(payload)
 
                     # Unknown messages
                     case _:
@@ -678,12 +690,8 @@ class SolixBLEDevice:
                     bytes.fromhex(PRIVATE_KEY), byteorder="big"
                 )
                 private_key = derive_private_key(private_value, SECP256R1())
-                shared_secret = private_key.exchange(ECDH(), device_public_key)
-                self._shared_key = shared_secret[:16]
-                self._iv = shared_secret[16:]
-                _LOGGER.debug(f"Shared secret: {shared_secret.hex()}")
-                _LOGGER.debug(f"AES key: {self._shared_key.hex()}")
-                _LOGGER.debug(f"AES IV: {self._iv.hex()}")
+                self._shared_secret = private_key.exchange(ECDH(), device_public_key)
+                _LOGGER.debug(f"Shared secret: {self._shared_secret.hex()}")
 
                 _LOGGER.debug("Sending stage 5 response message...")
                 return await self._client.write_gatt_char(
@@ -742,14 +750,11 @@ class SolixBLEDevice:
             f"Building packet with cmd: {cmd.hex()} and payload: {payload.hex()}"
         )
 
-        # Pad payload
+        # Pad and encrypt payload
         padder = PKCS7(128).padder()
         padded_data = padder.update(payload)
         padded_data += padder.finalize()
-
-        # Encrypt payload
-        cipher = AES.new(self._shared_key, AES.MODE_CBC, iv=self._iv)
-        encrypted_payload = cipher.encrypt(padded_data)
+        encrypted_payload = self._encrypt_payload(padded_data)
 
         # Calculate length of message
         length = 2 + 2 + 3 + 2 + len(encrypted_payload) + 1
@@ -979,8 +984,7 @@ class SolixBLEDevice:
 
         self._telemetry_payload_small = None
         self._telemetry_payload_large = None
-        self._shared_key = None
-        self._iv = None
+        self._shared_secret = None
         self._last_packet_timestamp = None
         self._negotiation_timestamp = None
         self._packet_futures: dict[bytes, list[asyncio.Future]] = {}

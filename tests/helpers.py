@@ -166,7 +166,9 @@ class MockDevice:
             for callback in dc_callbacks:
                 callback(bleak_client)
 
-    def expect_ordered(self, value: bytes, response: Union[bytes, None] = None):
+    def expect_ordered(
+        self, value: Union[bytes, None] = None, response: Union[bytes, None] = None
+    ):
         """
         Expect an ordered request to be made to the mock device with
         the specified value and optionally respond with bytes.
@@ -174,7 +176,7 @@ class MockDevice:
         If an unexpected or out of order request is made an error will be
         raised.
 
-        :param value: Expected bytes value.
+        :param value: Expected bytes value or None to accept any.
         :param response: Optional bytes value to respond with.
         """
         self._assertions.append(RequestResponse(value, response, False))
@@ -236,10 +238,11 @@ class MockDevice:
                 False
             ), f"Received an unexpected request '{data.hex()}'. Number: {self._position+1}, Num expected: {len(self._assertions)}"
 
-        # Assert it matches
-        assert (
-            request_response.expected == data
-        ), f"Expected bytes {request_response.expected.hex()}' but got '{data.hex()}'!"
+        if request_response.expected is not None:
+            # Assert it matches
+            assert (
+                request_response.expected == data
+            ), f"Expected bytes {request_response.expected.hex()}' but got '{data.hex()}'!"
 
         # Increment position
         self._position = self._position + 1

@@ -130,19 +130,19 @@ Expansion battery serial number     ❌           ❌
 Prime charger support
 ---------------------
 
-======================= =============
-Parameter               250w (A2345)
-======================= =============
-Display status           ❌
-Total power out          ❌
-Individual port status   ✅
-Individual port voltage  ✅
-Individual port current  ✅
-Individual port power    ✅
-Temperature              ❌
-Firmware version         ❌
-Serial number            ❌
-======================= =============
+======================= ============= =============
+Parameter               250w (A2345)  160w (A2687)
+======================= ============= =============
+Display status           ❌            ❌
+Total power out          ❌            ❌
+Individual port status   ✅            ✅
+Individual port voltage  ✅            ✅
+Individual port current  ✅            ✅
+Individual port power    ✅            ✅
+Temperature              ❌            ❌
+Firmware version         ❌            ❌
+Serial number            ❌            ❌
+======================= ============= =============
 
 
 

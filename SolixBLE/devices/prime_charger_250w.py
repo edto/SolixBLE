@@ -5,11 +5,11 @@
 """
 
 from ..const import DEFAULT_METADATA_FLOAT
-from ..device import SolixBLEDevice
+from ..prime_device import PrimeDevice
 from ..states import PortStatus
 
 
-class PrimeCharger250w(SolixBLEDevice):
+class PrimeCharger250w(PrimeDevice):
     """
     Anker Prime Charger (250W) model.
 

@@ -452,7 +452,7 @@ async def test_values(
     """
     device = device_class(MOCK_BLE_DEVICE)
     parameters = device._parse_payload(bytes.fromhex(payload))
-    await device._process_telemetry(None, parameters)
+    await device._process_telemetry(parameters)
 
     for class_property, expected_value in mapping.items():
         assert (
@@ -462,45 +462,57 @@ async def test_values(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "device_class, packet_1, packet_2, packet_3, packet_4, packet_5, secret",
+    "device_class,packets,secret",
     [
         pytest.param(
             C300,
-            "ff090e00030001080100a1010152",
-            "ff091b00030001080300a10102a202fd00a30144a40101a50102ff",
-            "ff093800030001082900a10103a2054553503332a307302e302e302e33a410415a5653424a30453339323030303438a506f49d8a53a95a14",
-            "ff090b00030001080500f2",
-            "ff094d00030001082100a140c2a5a88fab34c1ac0f96a52e1b93354a47fb6c674b5afebacf5a2ed755435f41f0d26e97782e54e268b46d9f8a58a267cd7f7a239771e6289e55d94f7669ed448a",
+            [
+                "ff090e00030001080100a1010152",
+                "ff091b00030001080300a10102a202fd00a30144a40101a50102ff",
+                "ff093800030001082900a10103a2054553503332a307302e302e302e33a410415a5653424a30453339323030303438a506f49d8a53a95a14",
+                "ff090b00030001080500f2",
+                "ff094d00030001082100a140c2a5a88fab34c1ac0f96a52e1b93354a47fb6c674b5afebacf5a2ed755435f41f0d26e97782e54e268b46d9f8a58a267cd7f7a239771e6289e55d94f7669ed448a",
+                None,
+            ],
             "2e9edc471d11bd214d45c0a651ab42e3cd370e04f1b860fc85adfaf612aba33f",
             id="c300_1",
         ),
         pytest.param(
             C300,
-            "ff090e00030001080100a1010152",
-            "ff091b00030001080300a10102a202fd00a30144a40101a50102ff",
-            "ff093800030001082900a10103a2054553503332a307302e302e302e33a410415a5653424a30453339323030303438a506f49d8a53a95a14",
-            "ff090b00030001080500f2",
-            "ff094d00030001082100a140a7b5d3824a36cae20bab9fc4d9358191e5351905a782eda157f376cc43f1f761ab772d437f33787188716d1bebd81719d1eb76b94f08499ee93895d5b43e75ef5f",
+            [
+                "ff090e00030001080100a1010152",
+                "ff091b00030001080300a10102a202fd00a30144a40101a50102ff",
+                "ff093800030001082900a10103a2054553503332a307302e302e302e33a410415a5653424a30453339323030303438a506f49d8a53a95a14",
+                "ff090b00030001080500f2",
+                "ff094d00030001082100a140a7b5d3824a36cae20bab9fc4d9358191e5351905a782eda157f376cc43f1f761ab772d437f33787188716d1bebd81719d1eb76b94f08499ee93895d5b43e75ef5f",
+                None,
+            ],
             "f97b0112a955846530c60e4cf95f941df76d86ab9ca106aa4bd00fe1c4fcb14f",
             id="c300_2",
         ),
         pytest.param(
             C1000,
-            "ff090e00030001080100a1010152",
-            "ff091b00030001080300a10102a202fd00a30144a40101a50102ff",
-            "ff093800030001082900a10103a2054553503332a307302e302e302e33a41041504339464530453237333030323735a506f49d8a104e0c9a",
-            "ff090b00030001080500f2",
-            "ff094d00030001082100a140d3ef70a8faeb9ae7d9be034390108c2c7b177f3d549eb87318bd7a31703fc604664efb0e4600298ca9a905fb5af170955fb76229791dd583478b84d9950bd65420",
+            [
+                "ff090e00030001080100a1010152",
+                "ff091b00030001080300a10102a202fd00a30144a40101a50102ff",
+                "ff093800030001082900a10103a2054553503332a307302e302e302e33a41041504339464530453237333030323735a506f49d8a104e0c9a",
+                "ff090b00030001080500f2",
+                "ff094d00030001082100a140d3ef70a8faeb9ae7d9be034390108c2c7b177f3d549eb87318bd7a31703fc604664efb0e4600298ca9a905fb5af170955fb76229791dd583478b84d9950bd65420",
+                None,
+            ],
             "2bdc8c8bfecf40814f602e6547cf29bf125abcc1a93be0751d8f1065a2bb5570",
             id="c1000_1",
         ),
         pytest.param(
             C1000,
-            "ff090e00030001080100a1010152",
-            "ff091b00030001080300a10102a202fd00a30144a40101a50102ff",
-            "ff093800030001082900a10103a2054553503332a307302e302e302e33a41041504339464530453237333030323735a506f49d8a104e0c9a",
-            "ff090b00030001080500f2",
-            "ff094d00030001082100a140b2ade5cac4f4a0c1307e44a0e9c5363cb21e4c8485ee324c23be949fa5d5929a75e57da3207c948a0c366ca9ea1ab2cb8e57d2d046a6ebefe5d96adb5d4cb35039",
+            [
+                "ff090e00030001080100a1010152",
+                "ff091b00030001080300a10102a202fd00a30144a40101a50102ff",
+                "ff093800030001082900a10103a2054553503332a307302e302e302e33a41041504339464530453237333030323735a506f49d8a104e0c9a",
+                "ff090b00030001080500f2",
+                "ff094d00030001082100a140b2ade5cac4f4a0c1307e44a0e9c5363cb21e4c8485ee324c23be949fa5d5929a75e57da3207c948a0c366ca9ea1ab2cb8e57d2d046a6ebefe5d96adb5d4cb35039",
+                None,
+            ],
             "0c4d9db9ef376fcfe627b9b73089eda514315d4bf67fb7eb299f2894ef7a059c",
             id="c1000_2",
         ),
@@ -508,111 +520,85 @@ async def test_values(
 )
 async def test_negotiation(
     device_class: SolixBLEDevice,
-    packet_1: str,
-    packet_2: str,
-    packet_3: str,
-    packet_4: str,
-    packet_5: str,
+    packets: list[str],
     secret: str,
 ):
     """
     Test negotiation of the shared secret by mocking a device.
 
     :param device_class: The class of the device being tested.
-    :param packet_1: Packet sent by device in response to negotiation command 0.
-    :param packet_2: Packet sent by device in response to negotiation command 1.
-    :param packet_3: Packet sent by device in response to negotiation command 2.
-    :param packet_4: Packet sent by device in response to negotiation command 3.
-    :param packet_5: Packet sent by device in response to negotiation command 4.
+    :param packets: Packets sent by the mock device in response to our packets.
     :param secret: The expected shared secret.
     """
     async with MockDevice() as mock_bluetooth:
 
         device = device_class(MOCK_BLE_DEVICE)
 
-        mock_bluetooth.expect_ordered(
-            bytes.fromhex(const.NEGOTIATION_COMMAND_0),
-            bytes.fromhex(packet_1),
-        )
-        mock_bluetooth.expect_ordered(
-            bytes.fromhex(const.NEGOTIATION_COMMAND_1),
-            bytes.fromhex(packet_2),
-        )
-        mock_bluetooth.expect_ordered(
-            bytes.fromhex(const.NEGOTIATION_COMMAND_2),
-            bytes.fromhex(packet_3),
-        )
-        mock_bluetooth.expect_ordered(
-            bytes.fromhex(const.NEGOTIATION_COMMAND_3),
-            bytes.fromhex(packet_4),
-        )
-        mock_bluetooth.expect_ordered(
-            bytes.fromhex(const.NEGOTIATION_COMMAND_4),
-            bytes.fromhex(packet_5),
-        )
-        mock_bluetooth.expect_ordered(bytes.fromhex(const.NEGOTIATION_COMMAND_5), None)
+        for packet in packets:
+            mock_bluetooth.expect_ordered(
+                None,
+                bytes.fromhex(packet) if packet else None,
+            )
 
         # Assert that the connection succeeds
         assert await device.connect(), "Expected connect to return True"
 
         # Assert that the correct shared secret is calculated
         assert (
-            bytes.fromhex(secret)[:16] == device._shared_key
-        ), "Negotiated key does not match expected"
-        assert (
-            bytes.fromhex(secret)[16:] == device._iv
-        ), "Negotiated IV does not match expected"
+            bytes.fromhex(secret) == device._shared_secret
+        ), "Shared secret does not match expected"
 
         mock_bluetooth.check_assertions()
 
 
 @pytest.mark.parametrize(
-    "payload,secret,iv,decrypted",
+    "device_class,payload,secret,decrypted",
     [
         pytest.param(
+            C300,
             "5bc7c7b05cf74c1ba441a17a5568f4b25bc061d354f498e39ba509e2c7664ce36d6a9ee8280a40736b9b681f10ab6eb7c86bca4b88fe6fc39ca3391d7ede4e1c47b6b5f0e5ccc67c841a0eb0912039323c27f9e819244424914c9fb538e93a23bc9bfd0f4e9df1b59fec44b5236c75c6f45e42a1110152e56491f8381ae07e50113e3746ca9a16182bc8c9102bbb463eb42d27b1e6330feb3f76d21bf751fe4a1d469c64cd8c9bda426943d48fc7c583c665ea21c7ee23fdde9262d47727c9454d88dd30d291f9bc9b0936a66761846c729f898895d97c158c36e703626ea8499fbf2dc8962159f1b7380f5f84038240d5df00ce1a7eecb4f3ea0b7de9aac5b8637d78f0f3fcf6d600227148d5011bd765a99be6d6ab0e83b9ebe8dcb9ce5ba6",
-            "23a6446c34efb9f9ab1dbc43ffc8e289",
-            "fffdfed557f849c4e91bd7baec0c4814",
+            "23a6446c34efb9f9ab1dbc43ffc8e289fffdfed557f849c4e91bd7baec0c4814",
             "a10131a2050300000000a3050300000000a40302ffffa503020000a603025b00a703020000a803020000a903020000aa03020000ab03020000ac03020000ad03020000ae03025b00af03020000b003020100b103021b04b20302fc01b30302fc01b403021c00b503027b00b603021b04b7020101b8020100b9020125ba020100bb020164bc020164bd020100be020100bf020100c0020101c1020100c2020100c3020100c4020100c51100415a5653424a30453339323030303438c603024a01c70302a005c803022c01c903023c00ca03020000cb020101cc020100cd020102ce020132cf020100d0020100d1020100d2020100f7050301000000f815040101010100010000000000000000000000000000f90201020a0a0a0a0a0a0a0a0a0a",
             id="c300_telemetry",
         ),
         pytest.param(
+            C1000,
             "403d9e7311afd074672804704798c421db698f11a5a0fc4bd793c127871c6eea7a970666c9b614c494e62b15770b1dba3dc98019e34cf0eb0ebecb5a2c5bc9ae39441d5e5acad73a645112b779312966513b53ba6f78c0f82cda624cce3b08a1a83416bd52fa4caf37e05cfaa9b37ddea75447be949ba10b892c320398fae0191c1290af0e79791c56c0d2217aafb9259b13cd2ccb9e4d520548eb416f4f96b9d852231578d4d516495564215c297fce97549986ef47058168d77afddc8ac5c0b59c9bfaf681a4cd60eca4bfad743731ca81849b83689e452e68f82fcab9fa2404f05f22b557b73705d16bab42b8045ffcc8083f9cb4fa4acda9997de1a40a2eac55b5dfbc70d882874c1db1990b76ae009bb1997ab507d347c84f3fd39d6f6c",
-            "0c4d9db9ef376fcfe627b9b73089eda5",
-            "14315d4bf67fb7eb299f2894ef7a059c",
+            "0c4d9db9ef376fcfe627b9b73089eda514315d4bf67fb7eb299f2894ef7a059c",
             "a10131a2050300000000a3050300000000a40302d104a503020000a603020000a703020000a803020000a903020000aa03020000ab03020000ac03020000ad03020000ae03020000af03020000b003020300b103020000b203020100b30302a600b403020000b50302ff01b60302ff01b703020000b803029a00b903020000ba0302a600bb03020000bc020100bd020123be020100bf020101c0020100c1020164c2020100c3020164c4020100c5020100c6020100c7020100c8020100c9020100ca020100cb020100cc020100cd020100ce020100cf020100d0110041504339464530453237333030323735e5020100f7050301000000f815040202010100010000000000000000000000000000f9020102fd0b0041313736315f3330416801",
             id="c1000_telemetry",
         ),
         pytest.param(
+            C1000,
             "a9fdb7f5f88e0d7ec2c3a36f9cb4f226",
-            "cf9b34f93bc679b84c9754a9484a5699",
-            "1cef242c586b23dbef195ba0f2ee02cb",
+            "cf9b34f93bc679b84c9754a9484a56991cef242c586b23dbef195ba0f2ee02cb",
             "00a101310c0c0c0c0c0c0c0c0c0c0c0c",
             id="c1000_cmd_ack_ac_on",
         ),
         pytest.param(
+            C1000,
             "2eb0fc833d00ca9e33491eab73ccfda202cfdedb86599ba5d0e3c2c059652818",
-            "cf9b34f93bc679b84c9754a9484a5699",
-            "1cef242c586b23dbef195ba0f2ee02cb",
+            "cf9b34f93bc679b84c9754a9484a56991cef242c586b23dbef195ba0f2ee02cb",
             "a10131a2020101a3020100a4020100a5020103a6020101e50201000505050505",
             id="c1000_unknown",
         ),
     ],
 )
-def test_payload_decryption(payload: str, secret: str, iv: str, decrypted: str):
+def test_payload_decryption(
+    device_class: SolixBLEDevice, payload: str, secret: str, decrypted: str
+):
     """
     Test the decryption of a payload only. This does not test the
     splitting of a packet.
 
+    :param device_class: Class of device under test.
     :param payload: Payload to be decrypted.
-    :param secret: AES secret payload is encrypted with.
-    :param iv: IV used to encrypt payload.
+    :param secret: Shared secret used for AES key and IV.
     :param decrypted: Expected content of decrypted payload.
     """
 
-    device = SolixBLEDevice(BLEDevice)
-    device._shared_key = bytes.fromhex(secret)
-    device._iv = bytes.fromhex(iv)
+    device = device_class(MOCK_BLE_DEVICE)
+    device._shared_secret = bytes.fromhex(secret)
 
     decrypted_bytes = device._decrypt_payload(bytes.fromhex(payload))
     assert decrypted_bytes.hex() == decrypted, "Payloads do not match!"
@@ -620,12 +606,11 @@ def test_payload_decryption(payload: str, secret: str, iv: str, decrypted: str):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "packets, secret, iv, parameters",
+    "packets, secret, parameters",
     [
         # Test that when there are no packets device._ data is None
         pytest.param(
             [],
-            "",
             "",
             None,
             id="no_packets",
@@ -635,8 +620,7 @@ def test_payload_decryption(payload: str, secret: str, iv: str, decrypted: str):
             [
                 "ff092a0003010f440156ecb95eb746de03d40ee711ce99f42837a9554c6382d3f5298a3b0648d8536936"
             ],
-            "645ca871528991eb38ebb327a781e932",
-            "b1d9d7a613b04c966b317db056c83428",
+            "645ca871528991eb38ebb327a781e932b1d9d7a613b04c966b317db056c83428",
             None,
             id="irrelevant_packet_only",
         ),
@@ -645,8 +629,7 @@ def test_payload_decryption(payload: str, secret: str, iv: str, decrypted: str):
             [
                 "ff09390003010fc40222788d127d8418b41a81719975719a26b32734ea4e44ce244683e31928bb9a2736f9ede939567cddce6b3fb0de68116c"
             ],
-            "645ca871528991eb38ebb327a781e932",
-            "b1d9d7a613b04c966b317db056c83428",
+            "645ca871528991eb38ebb327a781e932b1d9d7a613b04c966b317db056c83428",
             None,
             id="packet_1_missing",
         ),
@@ -655,8 +638,7 @@ def test_payload_decryption(payload: str, secret: str, iv: str, decrypted: str):
             [
                 "ff09fd0003010fc402121e0e23790307a57d4adabcd8d5ad56c3a9ea3cb5b222b0152438ccd3b980eda40fbde184fa66c80c3372dad179f11cad8799858ab95696e52c7e729af87c1106343ed5be9c042c8912b14f3a0d94b32afbed432e66616e1895ba0ff5e74a6da9401117070c926631e5d7886a07bec0de35aeb689e8bb289f1d7854143dc413f25d4b57d290ca4378cfb8efc275aa779145f98956e934eaced2d1f51cef7dd21a340318bfc14fb5f90ffd33e0e484175512af33593b1f91eb9801d7c2e1ac6d56e8fe7e8883d62226484ed6f1af711d042c5e3d0c186b3f2222293bc71ccf4a156a544d5171e90ee9b6b9b8f36ae058b96e3b88"
             ],
-            "645ca871528991eb38ebb327a781e932",
-            "b1d9d7a613b04c966b317db056c83428",
+            "645ca871528991eb38ebb327a781e932b1d9d7a613b04c966b317db056c83428",
             None,
             id="packet_2_missing",
         ),
@@ -666,8 +648,7 @@ def test_payload_decryption(payload: str, secret: str, iv: str, decrypted: str):
                 "ff09390003010fc40222788d127d8418b41a81719975719a26b32734ea4e44ce244683e31928bb9a2736f9ede939567cddce6b3fb0de68116c",
                 "ff09fd0003010fc402121e0e23790307a57d4adabcd8d5ad56c3a9ea3cb5b222b0152438ccd3b980eda40fbde184fa66c80c3372dad179f11cad8799858ab95696e52c7e729af87c1106343ed5be9c042c8912b14f3a0d94b32afbed432e66616e1895ba0ff5e74a6da9401117070c926631e5d7886a07bec0de35aeb689e8bb289f1d7854143dc413f25d4b57d290ca4378cfb8efc275aa779145f98956e934eaced2d1f51cef7dd21a340318bfc14fb5f90ffd33e0e484175512af33593b1f91eb9801d7c2e1ac6d56e8fe7e8883d62226484ed6f1af711d042c5e3d0c186b3f2222293bc71ccf4a156a544d5171e90ee9b6b9b8f36ae058b96e3b88",
             ],
-            "645ca871528991eb38ebb327a781e932",
-            "b1d9d7a613b04c966b317db056c83428",
+            "645ca871528991eb38ebb327a781e932b1d9d7a613b04c966b317db056c83428",
             None,
             id="both_packets_reversed",
         ),
@@ -677,8 +658,7 @@ def test_payload_decryption(payload: str, secret: str, iv: str, decrypted: str):
                 "ff09fd0003010fc402121e0e23790307a57d4adabcd8d5ad56c3a9ea3cb5b222b0152438ccd3b980eda40fbde184fa66c80c3372dad179f11cad8799858ab95696e52c7e729af87c1106343ed5be9c042c8912b14f3a0d94b32afbed432e66616e1895ba0ff5e74a6da9401117070c926631e5d7886a07bec0de35aeb689e8bb289f1d7854143dc413f25d4b57d290ca4378cfb8efc275aa779145f98956e934eaced2d1f51cef7dd21a340318bfc14fb5f90ffd33e0e484175512af33593b1f91eb9801d7c2e1ac6d56e8fe7e8883d62226484ed6f1af711d042c5e3d0c186b3f2222293bc71ccf4a156a544d5171e90ee9b6b9b8f36ae058b96e3b88",
                 "ff09390003010fc40222788d127d8418b41a81719975719a26b32734ea4e44ce244683e31928bb9a2736f9ede939567cddce6b3fb0de68116c",
             ],
-            "645ca871528991eb38ebb327a781e932",
-            "b1d9d7a613b04c966b317db056c83428",
+            "645ca871528991eb38ebb327a781e932b1d9d7a613b04c966b317db056c83428",
             """{'a1': '31', 'a2': '0300000000', 'a3': '0300000000', 'a4': '02720f', 'a5': '020000', 'a6': '020000', 'a7': '020000', 'a8': '020000', 'a9': '020000', 'aa': '020000', 'ab': '020000', 'ac': '020000', 'ad': '020000', 'ae': '020000', 'af': '020000', 'b0': '020100', 'b1': '020000', 'b2': '020100', 'b3': '02a600', 'b4': '020000', 'b5': '02ff01', 'b6': '02ff01', 'b7': '020000', 'b8': '029a00', 'b9': '020000', 'ba': '02a600', 'bb': '020000', 'bc': '0100', 'bd': '0122', 'be': '0100', 'bf': '0101', 'c0': '0100', 'c1': '0164', 'c2': '0100', 'c3': '0164', 'c4': '0100', 'c5': '0100', 'c6': '0100', 'c7': '0100', 'c8': '0100', 'c9': '0100', 'ca': '0100', 'cb': '0100', 'cc': '0100', 'cd': '0100', 'ce': '0100', 'cf': '0100', 'd0': '0041504339464530453237333030323735', 'e5': '0100', 'f7': '0301000000', 'f8': '040202010100010000000000000000000000000000', 'f9': '0102', 'fd': '0041313736315f33304168'}""",
             id="both_packets",
         ),
@@ -691,8 +671,7 @@ def test_payload_decryption(payload: str, secret: str, iv: str, decrypted: str):
                 "ff09390003010fc40222788d127d8418b41a81719975719a26b32734ea4e44ce244683e31928bb9a2736f9ede939567cddce6b3fb0de68116c",
                 "ff09fd0003010fc402121e0e23790307a57d4adabcd8d5ad56c3218e598b95b4b8aa7ff3483fd3cfc72612b49fad1e5e27b50be913da3b73328c0db3e5f58c5a86dce0f36a9c080db786c1b917a8541d43aec30c6cbd2b229876255894ac5269fb9f3d4258450905bbe28781c5544d7eb57553bc5c39418d02fba353983a9b0f318e951d57ccc019cea984f9a64b0cb793bec8c696936b16fac2d72c59c4b95561f5f534c448f911d5e1c9ac30601e04fb2338313498d083cc6f676b0797b587ebc5e2fc32e60562f5e41e44682b5f8f094bcbea33e0926f304366d5df28c4868d00ba37eb754c9921e9b63ebb0bb1fb76f644c0760636df1303362106",
             ],
-            "645ca871528991eb38ebb327a781e932",
-            "b1d9d7a613b04c966b317db056c83428",
+            "645ca871528991eb38ebb327a781e932b1d9d7a613b04c966b317db056c83428",
             """{'a1': '31', 'a2': '0300000000', 'a3': '0300000000', 'a4': '02720f', 'a5': '020000', 'a6': '020000', 'a7': '020000', 'a8': '020000', 'a9': '020000', 'aa': '020000', 'ab': '020000', 'ac': '020000', 'ad': '020000', 'ae': '020000', 'af': '020000', 'b0': '020100', 'b1': '020000', 'b2': '020100', 'b3': '02a600', 'b4': '020000', 'b5': '02ff01', 'b6': '02ff01', 'b7': '020000', 'b8': '029a00', 'b9': '020000', 'ba': '02a600', 'bb': '020000', 'bc': '0100', 'bd': '0122', 'be': '0100', 'bf': '0101', 'c0': '0100', 'c1': '0164', 'c2': '0100', 'c3': '0164', 'c4': '0100', 'c5': '0100', 'c6': '0100', 'c7': '0100', 'c8': '0100', 'c9': '0100', 'ca': '0100', 'cb': '0100', 'cc': '0100', 'cd': '0100', 'ce': '0100', 'cf': '0100', 'd0': '0041504339464530453237333030323735', 'e5': '0100', 'f7': '0301000000', 'f8': '040202010100010000000000000000000000000000', 'f9': '0102', 'fd': '0041313736315f33304168'}""",
             id="both_packets_later_invalidates",
         ),
@@ -706,8 +685,7 @@ def test_payload_decryption(payload: str, secret: str, iv: str, decrypted: str):
                 "ff09390003010fc40222922d054e0b6cd682ba63ba7cc0e158113a569150aa95c5a21bc3142c1ba2e95c06a7ce78547448520ae8cc1a2844fa",
                 "ff09fd0003010fc402121e0e23790307a57d4adabcd8d5ad56c3218e598b95b4b8aa7ff3483fd3cfc72612b49fad1e5e27b50be913da3b73328c0db3e5f58c5a86dce0f36a9c080db786c1b917a8541d43aec30c6cbd2b229876255894ac5269fb9f3d4258450905bbe28781c5544d7eb57553bc5c39418d02fba353983a9b0f318e951d57ccc019cea984f9a64b0cb793bec8c696936b16fac2d72c59c4b95561f5f534c448f911d5e1c9ac30601e04fb2338313498d083cc6f676b0797b587ebc5e2fc32e60562f5e41e44682b5f8f094bcbea33e0926f304366d5df28c4868d00ba37eb754c9921e9b63ebb0bb1fb76f644c0760636df1303362106",
             ],
-            "645ca871528991eb38ebb327a781e932",
-            "b1d9d7a613b04c966b317db056c83428",
+            "645ca871528991eb38ebb327a781e932b1d9d7a613b04c966b317db056c83428",
             """{'a1': '31', 'a2': '0300000000', 'a3': '0300000000', 'a4': '02720f', 'a5': '020000', 'a6': '020000', 'a7': '020000', 'a8': '020000', 'a9': '020000', 'aa': '020000', 'ab': '020000', 'ac': '020000', 'ad': '020000', 'ae': '020000', 'af': '020000', 'b0': '020100', 'b1': '020000', 'b2': '020100', 'b3': '02a600', 'b4': '020000', 'b5': '02ff01', 'b6': '02ff01', 'b7': '020000', 'b8': '029a00', 'b9': '020000', 'ba': '02a600', 'bb': '020000', 'bc': '0100', 'bd': '0122', 'be': '0100', 'bf': '0101', 'c0': '0100', 'c1': '0164', 'c2': '0100', 'c3': '0164', 'c4': '0100', 'c5': '0100', 'c6': '0100', 'c7': '0100', 'c8': '0100', 'c9': '0100', 'ca': '0100', 'cb': '0100', 'cc': '0100', 'cd': '0100', 'ce': '0100', 'cf': '0100', 'd0': '0041504339464530453237333030323735', 'e5': '0100', 'f7': '0301000000', 'f8': '040202010100010000000000000000000000000000', 'f9': '0102', 'fd': '0041313736315f33304168'}""",
             id="both_packets_later_out_of_order",
         ),
@@ -720,8 +698,7 @@ def test_payload_decryption(payload: str, secret: str, iv: str, decrypted: str):
                 "ff09390003010fc40222788d127d8418b41a81719975719a26b32734ea4e44ce244683e31928bb9a2736f9ede939567cddce6b3fb0de68116c",
                 "ff091a0003010f484a6e744378c57c16ca8ab3a40bebb6f39807",
             ],
-            "645ca871528991eb38ebb327a781e932",
-            "b1d9d7a613b04c966b317db056c83428",
+            "645ca871528991eb38ebb327a781e932b1d9d7a613b04c966b317db056c83428",
             """{'a1': '31', 'a2': '0300000000', 'a3': '0300000000', 'a4': '02720f', 'a5': '020000', 'a6': '020000', 'a7': '020000', 'a8': '020000', 'a9': '020000', 'aa': '020000', 'ab': '020000', 'ac': '020000', 'ad': '020000', 'ae': '020000', 'af': '020000', 'b0': '020100', 'b1': '020000', 'b2': '020100', 'b3': '02a600', 'b4': '020000', 'b5': '02ff01', 'b6': '02ff01', 'b7': '020000', 'b8': '029a00', 'b9': '020000', 'ba': '02a600', 'bb': '020000', 'bc': '0100', 'bd': '0122', 'be': '0100', 'bf': '0101', 'c0': '0100', 'c1': '0164', 'c2': '0100', 'c3': '0164', 'c4': '0100', 'c5': '0100', 'c6': '0100', 'c7': '0100', 'c8': '0100', 'c9': '0100', 'ca': '0100', 'cb': '0100', 'cc': '0100', 'cd': '0100', 'ce': '0100', 'cf': '0100', 'd0': '0041504339464530453237333030323735', 'e5': '0100', 'f7': '0301000000', 'f8': '040202010100010000000000000000000000000000', 'f9': '0102', 'fd': '0041313736315f33304168'}""",
             id="both_packets_irrelevant_ignored",
         ),
@@ -734,23 +711,21 @@ def test_payload_decryption(payload: str, secret: str, iv: str, decrypted: str):
                 "ff09fd0003010fc402121e0e23790307a57d4adabcd8d5ad56c3218e598b95b4b8aa7ff3483fd3cfc72612b49fad1e5e27b50be913da3b73328c0db3e5f58c5a86dce0f36a9c080db786c1b917a8541d43aec30c6cbd2b229876255894ac5269fb9f3d4258450905bbe28781c5544d7eb57553bc5c39418d02fba353983a9b0f318e951d57ccc019cea984f9a64b0cb793bec8c696936b16fac2d72c59c4b95561f5f534c448f911d5e1c9ac30601e04fb2338313498d083cc6f676b0797b587ebc5e2fc32e60562f5e41e44682b5f8f094bcbea33e0926f304366d5df28c4868d00ba37eb754c9921e9b63ebb0bb1fb76f644c0760636df1303362106",
                 "ff09390003010fc40222922d054e0b6cd682ba63ba7cc0e158113a569150aa95c5a21bc3142c1ba2e95c06a7ce78547448520ae8cc1a2844fa",
             ],
-            "645ca871528991eb38ebb327a781e932",
-            "b1d9d7a613b04c966b317db056c83428",
+            "645ca871528991eb38ebb327a781e932b1d9d7a613b04c966b317db056c83428",
             """{'a1': '31', 'a2': '0300000000', 'a3': '0300000000', 'a4': '02d80e', 'a5': '020000', 'a6': '020000', 'a7': '020000', 'a8': '020000', 'a9': '020000', 'aa': '020000', 'ab': '020000', 'ac': '020000', 'ad': '020000', 'ae': '020000', 'af': '020000', 'b0': '020100', 'b1': '020000', 'b2': '020100', 'b3': '02a600', 'b4': '020000', 'b5': '02ff01', 'b6': '02ff01', 'b7': '020000', 'b8': '029a00', 'b9': '020000', 'ba': '02a600', 'bb': '020100', 'bc': '0100', 'bd': '0122', 'be': '0100', 'bf': '0101', 'c0': '0100', 'c1': '0164', 'c2': '0100', 'c3': '0164', 'c4': '0100', 'c5': '0100', 'c6': '0100', 'c7': '0100', 'c8': '0100', 'c9': '0100', 'ca': '0100', 'cb': '0100', 'cc': '0100', 'cd': '0100', 'ce': '0100', 'cf': '0100', 'd0': '0041504339464530453237333030323735', 'e5': '0100', 'f7': '0301000000', 'f8': '040202010100010000000000000000000000000000', 'f9': '0102', 'fd': '0041313736315f33304168'}""",
             id="both_packets_with_update",
         ),
     ],
 )
 async def test_telemetry_packet_processing(
-    packets: list[str], secret: str, iv: str, parameters: str | None
+    packets: list[str], secret: str, parameters: str | None
 ):
     """
     Test the _process_notification function when processing telemetry
     packets end to end.
 
     :param packets: List of packets to send to device.
-    :param secret: AES secret payloads are encrypted with.
-    :param iv: IV used to encrypt payloads.
+    :param secret: Shared secret used as AES key and IV.
     :param parameters: Expected parameters in string form.
     """
 
@@ -772,8 +747,7 @@ async def test_telemetry_packet_processing(
         assert device.negotiated, "Expected connected to be True"
         mock_bluetooth.check_assertions()
 
-        device._shared_key = bytes.fromhex(secret)
-        device._iv = bytes.fromhex(iv)
+        device._shared_secret = bytes.fromhex(secret)
 
         for packet in packets:
             await mock_bluetooth.send_data(bytes.fromhex(packet))
@@ -870,7 +844,7 @@ async def test_bad_values(
 
     device = device_class(MOCK_BLE_DEVICE)
     parameters = device._parse_payload(bytes.fromhex(payload))
-    await device._process_telemetry(None, parameters)
+    await device._process_telemetry(parameters)
 
     for class_property, expected_value in mapping.items():
         assert (

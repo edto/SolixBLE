@@ -5,10 +5,13 @@
 """
 
 import asyncio
+import logging
 
 from bleak import BleakScanner, BLEDevice
 
 from .const import UUID_IDENTIFIER
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def discover_devices(
@@ -29,7 +32,13 @@ async def discover_devices(
     devices = []
 
     def callback(device, advertising_data):
+        _LOGGER.debug(
+            f"Found generic BT device '{device}' with advertising data: '{advertising_data}'"
+        )
         if UUID_IDENTIFIER in advertising_data.service_uuids and device not in devices:
+            _LOGGER.debug(
+                f"Found Anker device '{device}' with advertising data: '{advertising_data}'"
+            )
             devices.append(device)
 
     async with BleakScanner(callback) as scanner:
