@@ -24,6 +24,7 @@ from .states import (
     DisplayTimeout,
     LightStatus,
     PortStatus,
+    TemperatureUnit,
 )
 from .utilities import discover_devices
 

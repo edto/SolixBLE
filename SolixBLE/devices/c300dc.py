@@ -13,7 +13,7 @@ from ..const import (
     DEFAULT_METADATA_STRING,
 )
 from ..device import SolixBLEDevice
-from ..states import ChargingStatus, LightStatus, PortStatus
+from ..states import ChargingStatus, LightStatus, PortStatus, TemperatureUnit
 
 
 class C300DC(SolixBLEDevice):
@@ -335,12 +335,12 @@ class C300DC(SolixBLEDevice):
         return LightStatus(self._parse_int("c8", begin=1))
 
     @property
-    def temperature_unit(self) -> int:
+    def temperature_unit(self) -> TemperatureUnit:
         """Configured temperature unit (returned temperature is always in degrees C).
 
         :returns: Configured temperature unit or default in value.
         """
-        return self._parse_int("c9", begin=1)
+        return TemperatureUnit(self._parse_int("c9", begin=1))
 
     @property
     def display_switch(self) -> bool:

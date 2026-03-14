@@ -22,6 +22,7 @@ from SolixBLE import (
     ChargingStatus,
     LightStatus,
     PortStatus,
+    TemperatureUnit,
     SolixBLEDevice,
     const,
 )
@@ -476,7 +477,7 @@ MOCK_BLE_DEVICE = BLEDevice(MOCK_DEVICE_ADDRESS, MOCK_DEVICE_NAME, {}, 0)
                 "display_timeout": 0,
                 "display_mode": 0,
                 "light": LightStatus.OFF,
-                "temperature_unit": 0,
+                "temperature_unit": TemperatureUnit.CELSIUS,
                 "display_switch": False,
                 "light_timeout": 0,
                 "solar_port": PortStatus.NOT_CONNECTED,
@@ -486,7 +487,7 @@ MOCK_BLE_DEVICE = BLEDevice(MOCK_DEVICE_ADDRESS, MOCK_DEVICE_NAME, {}, 0)
         ),
         pytest.param(
             C300DC,
-            "a10131a20503ffffffffa30302ffffa40302ffffa50302ffffa60302ffffa70302ffffa80302ffffa90302ffffaa0302ffffab0302ffffac0302ffffad0302ffffae03020000af0302ffffb00302ffffb10302ffffb20302ffffb30302ffffb40302ffffb502017fb6020102b70201ffb80201ffb9020102ba020102bb020102bc020102bd020102be020102bf020102c0020100c10201ffc2020100c311007e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7ec40302ffffc50302ffffc603020000c70201ffc8020104c90201ffca0201ffcb0302ffffcc020100cd020102f70503fffffffff815040000000000000000000000000000000000000000",
+            "a10131a20503ffffffffa30302ffffa40302ffffa50302ffffa60302ffffa70302ffffa80302ffffa90302ffffaa0302ffffab0302ffffac0302ffffad0302ffffae03020000af0302ffffb00302ffffb10302ffffb20302ffffb30302ffffb40302ffffb502017fb6020102b70201ffb80201ffb9020102ba020102bb020102bc020102bd020102be020102bf020102c0020100c10201ffc2020100c311007e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7ec40302ffffc50302ffffc603020000c70201ffc8020104c9020101ca0201ffcb0302ffffcc020100cd020102f70503fffffffff815040000000000000000000000000000000000000000",
             {
                 "dc_output_timeout": 4294967295,
                 "hours_remaining": 1.5,
@@ -521,7 +522,7 @@ MOCK_BLE_DEVICE = BLEDevice(MOCK_DEVICE_ADDRESS, MOCK_DEVICE_NAME, {}, 0)
                 "display_timeout": 65535,
                 "display_mode": 255,
                 "light": LightStatus.SOS,
-                "temperature_unit": 255,
+                "temperature_unit": TemperatureUnit.FAHRENHEIT,
                 "display_switch": True,
                 "light_timeout": 65535,
                 "solar_port": PortStatus.INPUT,
@@ -531,7 +532,7 @@ MOCK_BLE_DEVICE = BLEDevice(MOCK_DEVICE_ADDRESS, MOCK_DEVICE_NAME, {}, 0)
         ),
         pytest.param(
             C300DC,
-            "a10131a2050355555555a30302aaaaa403020000a503020100a60302ff00a703020001a803025555a90302ff7faa03020080ab0302aaaaac030200ffad0302feffae03020000af0302ffffb003020f27b10302ffffb20302ffffb30302ffffb40302ffffb50201ffb6020101b70201feb8020101b9020100ba020101bb020102bc020100bd020101be020102bf020100c0020100c10201aac2020100c3110030313233343536373839414243444546c403023930c5030231D4c60302ffffc702010fc8020102c9020110ca0201ffcb03027b00cc020100cd020101f70503fffffffff815040000000000000000000000000000000000000000",
+            "a10131a2050355555555a30302aaaaa403020000a503020100a60302ff00a703020001a803025555a90302ff7faa03020080ab0302aaaaac030200ffad0302feffae03020000af0302ffffb003020f27b10302ffffb20302ffffb30302ffffb40302ffffb50201ffb6020101b70201feb8020101b9020100ba020101bb020102bc020100bd020101be020102bf020100c0020100c10201aac2020100c3110030313233343536373839414243444546c403023930c5030231D4c60302ffffc702010fc8020102c9020100ca0201ffcb03027b00cc020100cd020101f70503fffffffff815040000000000000000000000000000000000000000",
             {
                 "dc_output_timeout": 1431655765,
                 "hours_remaining": 1.0,
@@ -566,7 +567,7 @@ MOCK_BLE_DEVICE = BLEDevice(MOCK_DEVICE_ADDRESS, MOCK_DEVICE_NAME, {}, 0)
                 "display_timeout": 54321,
                 "display_mode": 15,
                 "light": LightStatus.MEDIUM,
-                "temperature_unit": 16,
+                "temperature_unit": TemperatureUnit.CELSIUS,
                 "display_switch": True,
                 "light_timeout": 123,
                 "solar_port": PortStatus.INPUT,

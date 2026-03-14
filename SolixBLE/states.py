@@ -110,3 +110,15 @@ class DisplayTimeout(Enum):
 
     #: 1800 seconds (30m).
     S1800 = 1800
+
+class TemperatureUnit(Enum):
+    """The status of the temperature unit of the device."""
+
+    #: The display unit is unknown.
+    UNKNOWN = -1
+
+    #: Display unit Celsius.
+    CELSIUS = 0
+
+    #: Display unit is Fahrenheit.
+    FAHRENHEIT = 1
