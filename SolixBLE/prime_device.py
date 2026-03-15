@@ -145,7 +145,16 @@ class PrimeDevice(SolixBLEDevice):
         )
         cipher.update(bytes.fromhex(AAD))
 
-        return cipher.decrypt_and_verify(encrypted_payload, mac)
+        try:
+            return cipher.decrypt_and_verify(encrypted_payload, mac)
+        except ValueError:
+            _LOGGER.exception(
+                "Failed to validate authenticity of payload, decoding anyway..."
+            )
+            cipher = AES.new(
+                self._shared_secret[:16], AES.MODE_GCM, nonce=self._shared_secret[16:28]
+            )
+            return cipher.decrypt(encrypted_payload)
 
     ###############
     # Negotiation #
