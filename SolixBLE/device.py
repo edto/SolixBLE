@@ -744,6 +744,26 @@ class SolixBLEDevice:
         new_payload = payload + bytes.fromhex("fe0503") + new_timestamp
         await self._send_encrypted_packet(cmd, new_payload)
 
+    def _build_packet(self, pattern: bytes, cmd: bytes, payload: bytes) -> bytes:
+        """
+        Build a packet to be send to a device.
+
+        Packet format: <HEADER 2B> <LENGTH 2B> <PATTERN 3B> <CMD 2B> <PAYLOAD bB> <CHECKSUM 1B>.
+
+        :param pattern: Pattern of packet (e.g encrypted, negotiation, etc).
+        :param cmd: Command in packet (e.g telemetry, power on, etc).
+        :param payload: Payload of command (e.g a1...).
+        :returns: Packet bytes ready to be sent.
+        """
+
+        # Calculate length of message
+        length = 2 + 2 + 3 + 2 + len(payload) + 1
+        length_bytes = length.to_bytes(length=2, byteorder="little")
+
+        # Build packet
+        packet = bytes.fromhex("ff09") + length_bytes + pattern + cmd + payload
+        return packet + self._checksum(packet)
+
     async def _send_encrypted_packet(self, cmd: bytes, payload: bytes) -> None:
         """Send an encrypted packet using negotiated shared secret and IV."""
         _LOGGER.debug(
@@ -756,19 +776,7 @@ class SolixBLEDevice:
         padded_data += padder.finalize()
         encrypted_payload = self._encrypt_payload(padded_data)
 
-        # Calculate length of message
-        length = 2 + 2 + 3 + 2 + len(encrypted_payload) + 1
-        length_bytes = length.to_bytes(length=2, byteorder="little")
-
-        # Build packet
-        packet = (
-            bytes.fromhex("ff09")
-            + length_bytes
-            + bytes.fromhex("03000f")
-            + cmd
-            + encrypted_payload
-        )
-        packet = packet + self._checksum(packet)
+        packet = self._build_packet(bytes.fromhex("03000f"), cmd, encrypted_payload)
         _LOGGER.debug(f"Sending encrypted packet: {packet.hex()}")
 
         # Send packet

@@ -40,25 +40,43 @@ NEGOTIATION_COMMAND_3 = "ff092d0003000140050a82d0ab53538ab3de100ae04aca679125788
 #: Response to receiving 4th negotiation message
 NEGOTIATION_COMMAND_4 = "ff095c0003000140210ac6ea31e4300bb2877d6ddeb628b0d7be8d768333f00ceab5454d20fbd97e091457b1f3b6efb6511eb9e98ac2b2c46eee211ae359ad246e1ae9886b4a29e41eddd5a5064d8b9ffdbfb43eb6b8e307fcde9de7"
 
-#: Response to receiving 5th negotiation message
-NEGOTIATION_COMMAND_5 = "ff094000030001402257ec69586f3500c8f858e0ba047f237f4e2ed8c50d2f39ba3587e4010275bea22242936f08788849272fb3f4cf7493be4a60bb9c9f0693"
+#: The cmd to put in the response to receiving 5th negotiation message
+NEGOTIATION_COMMAND_5_CMD = "4022"
 
-#: Response to receiving 6th negotiation message
-NEGOTIATION_COMMAND_6 = "ff094600030001402757ec69586f3501e8cf6185d8c4035707377af9af3a2e40b02b86e7531974f1c22440de6e43705566b77cf940e235b65abf4d413ece5f2c3781712f3742"
-
-#: First response to receiving 7th negotiation message
-NEGOTIATION_COMMAND_7 = (
-    "ff09230003000f420057e9b8dfdeacda7991d3eb7f12093e55ff002aa9799bcc9216e3"
+#: The payload to put in the response to receiving 5th negotiation message
+NEGOTIATION_COMMAND_5_PAYLOAD = (
+    "a104f079b569a30400000000a518474d54304253542c4d332e352e302f312c4d31302e352e30"
 )
 
-#: Second response to receiving 7st negotiation message
-NEGOTIATION_COMMAND_8 = "ff09530003000f420a57e9b883d958e48e5b7de48d980206577e2dafbb3d604dea3686f3011969f0db2311906d142b5730ee2bfb11e3fbbe7485aac8877995310669156ec74645c962b419e579b385fd079967"
+#: The cmd to put in the response to receiving 6th negotiation message
+NEGOTIATION_COMMAND_6_CMD = "4027"
+
+#: The payload to put in the response to receiving 6th negotiation message
+NEGOTIATION_COMMAND_6_PAYLOAD = "a104f079b569a22437396562656433352d646339632d343930342d623430632d373263346538363361613130"
+
+#: The cmd to put in the first response to receiving 7th negotiation message
+NEGOTIATION_COMMAND_7_CMD = "4200"
+
+#: The payload to put in the first response to receiving 7th negotiation message
+NEGOTIATION_COMMAND_7_PAYLOAD = "a10121fe04f079b569"
+
+#: The cmd to put in the second response to receiving 7th negotiation message
+NEGOTIATION_COMMAND_8_CMD = "420a"
+
+#: The payload to put in the second response to receiving 7th negotiation message
+NEGOTIATION_COMMAND_8_PAYLOAD = "a10121a203044742a3250437396562656433352d646339632d343930342d623430632d373263346538363361613130a5020101fe04f079b569"
 
 #: Anker Prime devices encrypt the negotiation using a static key
 NEGOTIATION_KEY = "b8ff7422955d4eb6d554a2c470280559"
 
 #: Anker Prime devices encrypt the negotiation using a static nonce
 NEGOTIATION_NONCE = "6ba3e3f2f3a60f2971ce5d1f"
+
+#: The pattern used in negotiation packets from Anker Prime devices
+NEGOTIATION_PATTERN = "030001"
+
+#: The pattern used in telemetry packets from Anker Prime and Solix devices
+TELEMETRY_PATTERN = "03000f"
 
 #: Additional Authenticated Data bytes used by protocol
 AAD = "3322110077665544bbaa9988ffeeddcc"
@@ -95,6 +113,21 @@ class PrimeDevice(SolixBLEDevice):
             nonce=bytes.fromhex(NEGOTIATION_NONCE),
         )
         return cipher.decrypt(payload)
+
+    def _encrypt_payload(self, payload: bytes) -> bytes:
+        """
+        Encrypt the payload of a session message (e.g telemetry, commands, etc).
+
+        Anker Prime devices use AES GCM with the first 16 bytes of the shared
+        secret as the AES key and next 12 bytes as the nonce. The MAC tag is
+        16 bytes and appended to the end of the payload.
+        """
+        cipher = AES.new(
+            self._shared_secret[:16], AES.MODE_GCM, nonce=self._shared_secret[16:28]
+        )
+        cipher.update(bytes.fromhex(AAD))
+        encrypted_payload, mac_bytes = cipher.encrypt_and_digest(payload)
+        return encrypted_payload + mac_bytes
 
     def _decrypt_payload(self, payload: bytes) -> bytes:
         """
@@ -223,10 +256,22 @@ class PrimeDevice(SolixBLEDevice):
                 self._shared_secret = private_key.exchange(ECDH(), device_public_key)
                 _LOGGER.debug(f"Shared secret: {self._shared_secret.hex()}")
 
+                # All negotiation packets past this point use the
+                # shared secret for encryption rather than the static key.
+                # This means we need to build these messages instead of using
+                # pre-defined ones.
                 _LOGGER.debug("Sending stage 5 response message...")
+                new_payload = self._encrypt_payload(
+                    bytes.fromhex(NEGOTIATION_COMMAND_5_PAYLOAD)
+                )
+                new_packet = self._build_packet(
+                    pattern=bytes.fromhex(NEGOTIATION_PATTERN),
+                    cmd=bytes.fromhex(NEGOTIATION_COMMAND_5_CMD),
+                    payload=new_payload,
+                )
                 return await self._client.write_gatt_char(
                     UUID_COMMAND,
-                    bytes.fromhex(NEGOTIATION_COMMAND_5),
+                    new_packet,
                 )
 
             # Negotiations past this point are encrypted using the shared secret
@@ -241,9 +286,17 @@ class PrimeDevice(SolixBLEDevice):
                 _LOGGER.debug(f"Parameters: {self._parameters_to_str(parameters)}")
 
                 _LOGGER.debug("Sending stage 6 response message...")
+                new_payload = self._encrypt_payload(
+                    bytes.fromhex(NEGOTIATION_COMMAND_6_PAYLOAD)
+                )
+                new_packet = self._build_packet(
+                    pattern=bytes.fromhex(NEGOTIATION_PATTERN),
+                    cmd=bytes.fromhex(NEGOTIATION_COMMAND_6_CMD),
+                    payload=new_payload,
+                )
                 return await self._client.write_gatt_char(
                     UUID_COMMAND,
-                    bytes.fromhex(NEGOTIATION_COMMAND_6),
+                    new_packet,
                 )
 
             # Negotiation stage 7
@@ -256,13 +309,33 @@ class PrimeDevice(SolixBLEDevice):
                 _LOGGER.debug(f"Parameters: {self._parameters_to_str(parameters)}")
 
                 _LOGGER.debug("Sending stage 7 response messages...")
-                await self._client.write_gatt_char(
-                    UUID_COMMAND,
-                    bytes.fromhex(NEGOTIATION_COMMAND_7),
+
+                # Packet A
+                new_payload_a = self._encrypt_payload(
+                    bytes.fromhex(NEGOTIATION_COMMAND_7_PAYLOAD)
+                )
+                new_packet_a = self._build_packet(
+                    pattern=bytes.fromhex(TELEMETRY_PATTERN),
+                    cmd=bytes.fromhex(NEGOTIATION_COMMAND_7_CMD),
+                    payload=new_payload_a,
                 )
                 await self._client.write_gatt_char(
                     UUID_COMMAND,
-                    bytes.fromhex(NEGOTIATION_COMMAND_8),
+                    new_packet_a,
+                )
+
+                # Packet B
+                new_payload_b = self._encrypt_payload(
+                    bytes.fromhex(NEGOTIATION_COMMAND_8_PAYLOAD)
+                )
+                new_packet_b = self._build_packet(
+                    pattern=bytes.fromhex(TELEMETRY_PATTERN),
+                    cmd=bytes.fromhex(NEGOTIATION_COMMAND_8_CMD),
+                    payload=new_payload_b,
+                )
+                await self._client.write_gatt_char(
+                    UUID_COMMAND,
+                    new_packet_b,
                 )
                 return
 
