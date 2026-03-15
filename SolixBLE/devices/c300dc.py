@@ -13,7 +13,7 @@ from ..const import (
     DEFAULT_METADATA_STRING,
 )
 from ..device import SolixBLEDevice
-from ..states import ChargingStatus, LightStatus, PortStatus, TemperatureUnit
+from ..states import ChargingStatus, LightStatus, PortStatus, TemperatureUnit, PortOverload
 
 
 class C300DC(SolixBLEDevice):
@@ -287,12 +287,12 @@ class C300DC(SolixBLEDevice):
         return PortStatus(self._parse_int("bf", begin=1))
 
     @property
-    def device_overload(self) -> int:
+    def device_overload(self) -> PortOverload:
         """Device overload status.
 
         :returns: Device overload status or default in value.
         """
-        return self._parse_int("c1", begin=1)
+        return PortOverload(self._parse_int("c1", begin=1))
 
     @property
     def serial_number(self) -> str:

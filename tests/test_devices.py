@@ -23,6 +23,7 @@ from SolixBLE import (
     LightStatus,
     PortStatus,
     TemperatureUnit,
+    PortOverload,
     SolixBLEDevice,
     const,
 )
@@ -471,7 +472,7 @@ MOCK_BLE_DEVICE = BLEDevice(MOCK_DEVICE_ADDRESS, MOCK_DEVICE_NAME, {}, 0)
                 "usb_port_a1": PortStatus.NOT_CONNECTED,
                 "usb_port_a2": PortStatus.NOT_CONNECTED,
                 "dc_port": PortStatus.NOT_CONNECTED,
-                "device_overload": 0,
+                "device_overload": PortOverload.NONE,
                 "serial_number": "                ",
                 "device_timeout": 0,
                 "display_timeout": 0,
@@ -487,7 +488,7 @@ MOCK_BLE_DEVICE = BLEDevice(MOCK_DEVICE_ADDRESS, MOCK_DEVICE_NAME, {}, 0)
         ),
         pytest.param(
             C300DC,
-            "a10131a20503ffffffffa30302ffffa40302ffffa50302ffffa60302ffffa70302ffffa80302ffffa90302ffffaa0302ffffab0302ffffac0302ffffad0302ffffae03020000af0302ffffb00302ffffb10302ffffb20302ffffb30302ffffb40302ffffb502017fb6020102b70201ffb80201ffb9020102ba020102bb020102bc020102bd020102be020102bf020102c0020100c10201ffc2020100c311007e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7ec40302ffffc50302ffffc603020000c70201ffc8020104c9020101ca0201ffcb0302ffffcc020100cd020102f70503fffffffff815040000000000000000000000000000000000000000",
+            "a10131a20503ffffffffa30302ffffa40302ffffa50302ffffa60302ffffa70302ffffa80302ffffa90302ffffaa0302ffffab0302ffffac0302ffffad0302ffffae03020000af0302ffffb00302ffffb10302ffffb20302ffffb30302ffffb40302ffffb502017fb6020102b70201ffb80201ffb9020102ba020102bb020102bc020102bd020102be020102bf020102c0020100c102010ac2020100c311007e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7ec40302ffffc50302ffffc603020000c70201ffc8020104c9020101ca0201ffcb0302ffffcc020100cd020102f70503fffffffff815040000000000000000000000000000000000000000",
             {
                 "dc_output_timeout": 4294967295,
                 "hours_remaining": 1.5,
@@ -516,7 +517,7 @@ MOCK_BLE_DEVICE = BLEDevice(MOCK_DEVICE_ADDRESS, MOCK_DEVICE_NAME, {}, 0)
                 "usb_port_a1": PortStatus.INPUT,
                 "usb_port_a2": PortStatus.INPUT,
                 "dc_port": PortStatus.INPUT,
-                "device_overload": 255,
+                "device_overload": PortOverload.USB_C3,
                 "serial_number": "~~~~~~~~~~~~~~~~",
                 "device_timeout": 65535,
                 "display_timeout": 65535,
@@ -532,7 +533,7 @@ MOCK_BLE_DEVICE = BLEDevice(MOCK_DEVICE_ADDRESS, MOCK_DEVICE_NAME, {}, 0)
         ),
         pytest.param(
             C300DC,
-            "a10131a2050355555555a30302aaaaa403020000a503020100a60302ff00a703020001a803025555a90302ff7faa03020080ab0302aaaaac030200ffad0302feffae03020000af0302ffffb003020f27b10302ffffb20302ffffb30302ffffb40302ffffb50201ffb6020101b70201feb8020101b9020100ba020101bb020102bc020100bd020101be020102bf020100c0020100c10201aac2020100c3110030313233343536373839414243444546c403023930c5030231D4c60302ffffc702010fc8020102c9020100ca0201ffcb03027b00cc020100cd020101f70503fffffffff815040000000000000000000000000000000000000000",
+            "a10131a2050355555555a30302aaaaa403020000a503020100a60302ff00a703020001a803025555a90302ff7faa03020080ab0302aaaaac030200ffad0302feffae03020000af0302ffffb003020f27b10302ffffb20302ffffb30302ffffb40302ffffb50201ffb6020101b70201feb8020101b9020100ba020101bb020102bc020100bd020101be020102bf020100c0020100c1020108c2020100c3110030313233343536373839414243444546c403023930c5030231D4c60302ffffc702010fc8020102c9020100ca0201ffcb03027b00cc020100cd020101f70503fffffffff815040000000000000000000000000000000000000000",
             {
                 "dc_output_timeout": 1431655765,
                 "hours_remaining": 1.0,
@@ -561,7 +562,7 @@ MOCK_BLE_DEVICE = BLEDevice(MOCK_DEVICE_ADDRESS, MOCK_DEVICE_NAME, {}, 0)
                 "usb_port_a1": PortStatus.OUTPUT,
                 "usb_port_a2": PortStatus.INPUT,
                 "dc_port": PortStatus.NOT_CONNECTED,
-                "device_overload": 170,
+                "device_overload": PortOverload.USB_C1,
                 "serial_number": "0123456789ABCDEF",
                 "device_timeout": 12345,
                 "display_timeout": 54321,

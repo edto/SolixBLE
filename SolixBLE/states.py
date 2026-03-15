@@ -122,3 +122,21 @@ class TemperatureUnit(Enum):
 
     #: Display unit is Fahrenheit.
     FAHRENHEIT = 1
+
+class PortOverload(Enum):
+    """The overload status of a port."""
+
+    #: Overload status is unknown.
+    UNKNOWN = -1
+
+    #: No overload event.
+    NONE = 0
+
+    #: USB C1 overload detected.
+    USB_C1 = 8
+
+    #: USB C2 overload detected.
+    USB_C2 = 9
+
+    #: USB C3 overload detected.
+    USB_C3 = 10
