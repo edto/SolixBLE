@@ -273,6 +273,16 @@ class PrimeDevice(SolixBLEDevice):
                 # This means we need to build these messages instead of using
                 # pre-defined ones.
                 _LOGGER.debug("Sending stage 5 response message...")
+
+                # Log parameters we will send
+                # TODO: Remove after debugging complete!
+                new_parameters = self._parse_payload(
+                    bytes.fromhex(NEGOTIATION_COMMAND_5_PAYLOAD)
+                )
+                _LOGGER.debug(
+                    f"Stage 5 response message parameters: {self._parameters_to_str(new_parameters)}"
+                )
+
                 new_payload = self._encrypt_payload(
                     bytes.fromhex(NEGOTIATION_COMMAND_5_PAYLOAD)
                 )
@@ -300,6 +310,16 @@ class PrimeDevice(SolixBLEDevice):
                 _LOGGER.debug(f"Parameters: {self._parameters_to_str(parameters)}")
 
                 _LOGGER.debug("Sending stage 6 response message...")
+
+                # Log parameters we will send
+                # TODO: Remove after debugging complete!
+                new_parameters = self._parse_payload(
+                    bytes.fromhex(NEGOTIATION_COMMAND_6_PAYLOAD)
+                )
+                _LOGGER.debug(
+                    f"Stage 6 response message parameters: {self._parameters_to_str(new_parameters)}"
+                )
+
                 new_payload = self._encrypt_payload(
                     bytes.fromhex(NEGOTIATION_COMMAND_6_PAYLOAD)
                 )
@@ -341,6 +361,15 @@ class PrimeDevice(SolixBLEDevice):
                     new_packet_a,
                 )
 
+                # Log parameters we will send
+                # TODO: Remove after debugging complete!
+                new_parameters = self._parse_payload(
+                    bytes.fromhex(NEGOTIATION_COMMAND_7_PAYLOAD)
+                )
+                _LOGGER.debug(
+                    f"Stage 7a response message parameters: {self._parameters_to_str(new_parameters)}"
+                )
+
                 # Packet B
                 new_payload_b = self._encrypt_payload(
                     bytes.fromhex(NEGOTIATION_COMMAND_8_PAYLOAD)
@@ -355,6 +384,16 @@ class PrimeDevice(SolixBLEDevice):
                     UUID_COMMAND,
                     new_packet_b,
                 )
+
+                # Log parameters we will send
+                # TODO: Remove after debugging complete!
+                new_parameters = self._parse_payload(
+                    bytes.fromhex(NEGOTIATION_COMMAND_8_PAYLOAD)
+                )
+                _LOGGER.debug(
+                    f"Stage 7b response message parameters: {self._parameters_to_str(new_parameters)}"
+                )
+
                 return
 
             case _:
