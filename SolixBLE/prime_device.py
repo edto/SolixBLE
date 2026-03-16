@@ -5,6 +5,7 @@
 """
 
 import logging
+import time
 
 from Crypto.Cipher import AES
 from cryptography.hazmat.primitives.asymmetric.ec import (
@@ -325,6 +326,8 @@ class PrimeDevice(SolixBLEDevice):
                     f"Parameters: {self._parameters_to_str(parameters, types=True)}"
                 )
 
+                self._negotiation_timestamp = time.time()
+
                 # Extract public key of device from payload
                 device_public_key_bytes = bytes.fromhex("04") + parameters["a1"]
                 _LOGGER.debug(f"Public key of device: {device_public_key_bytes.hex()}")
@@ -495,3 +498,25 @@ class PrimeDevice(SolixBLEDevice):
         _LOGGER.debug(f"Decrypted payload: {decrypted_payload.hex()}")
         parameters = self._parse_payload(decrypted_payload)
         return await self._process_telemetry(parameters)
+
+    async def _send_command(self, cmd: bytes, payload: bytes) -> None:
+        """Send a command to the device.
+
+        :param cmd: 2 bytes containing command type.
+        :param payload: Variable number of bytes containing arguments.
+        :raises ConnectionError: If not connected/negotiated to device.
+        """
+        if not self.negotiated:
+            raise ConnectionError("Not connected to device")
+
+        # Commands include a timestamp in the payload to prevent replay attacks
+        # and that timestamp is set during negotiations
+        time_passed = int(time.time() - self._negotiation_timestamp)
+        base_timestamp = int.from_bytes(
+            bytes.fromhex(BASE_TIMESTAMP), byteorder="little"
+        )
+        new_timestamp = (base_timestamp + time_passed).to_bytes(
+            length=4, byteorder="little"
+        )
+        new_payload = payload + bytes.fromhex("fe04") + new_timestamp
+        await self._send_encrypted_packet(cmd, new_payload)
