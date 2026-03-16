@@ -135,6 +135,8 @@ Parameter               250w (A2345)  160w (A2687)
 ======================= ============= =============
 Display status           ❌            ❌
 Total power out          ❌            ❌
+Port on/off control      ❌            ✅
+Timer control            ❌            ✅
 Individual port status   ✅            ✅
 Individual port voltage  ✅            ✅
 Individual port current  ✅            ✅
