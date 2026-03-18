@@ -7,7 +7,7 @@
 import asyncio
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Union
 from unittest import mock
 
@@ -67,11 +67,26 @@ NEGOTIATION_RESPONSES_PRIME: dict[str, list[str]] = {
 
 
 @dataclass
+class ExpectedNegotiation:
+
+    shared_secret: bytes
+
+    private_key: str
+
+    requests: list[RequestResponse]
+
+
+@dataclass
 class RequestResponse:
     """
     Internal data class used by MockDevice to keep track of which
     requests have been executed and what the correct response to
     the request is.
+    """
+
+    name: str
+    """
+    Name of request to produce more useful error messages.
     """
 
     expected: bytes
@@ -84,7 +99,7 @@ class RequestResponse:
     The bytes (if any) that should be sent in response to a matching request.
     """
 
-    called: bool
+    called: bool = field(default=False)
     """
     Has this request been fulfilled.
     """
@@ -217,7 +232,22 @@ class MockDevice:
         :param value: Expected bytes value or None to accept any.
         :param response: List of bytes to respond with.
         """
-        self._assertions.append(RequestResponse(value, response, False))
+        self._assertions.append(
+            RequestResponse(
+                name=f"num {len(self._assertions)}", expected=value, response=response
+            )
+        )
+
+    def expect_ordered_all(self, requests: list[RequestResponse]):
+        """
+        Expect an list of requests.
+
+        If an unexpected or out of order request is made an error will be
+        raised.
+
+        :param request_response: Expected request and/or response.
+        """
+        self._assertions.extend(requests)
 
     async def start_notify(self, uuid: bytes, callback: Callable):
         """
@@ -281,7 +311,7 @@ class MockDevice:
             # Assert it matches
             assert (
                 request_response.expected == data
-            ), f"Expected bytes {request_response.expected.hex()}' for request {self._position+1} but got '{data.hex()}'!"
+            ), f"Expected bytes {request_response.expected.hex()}' for request '{request_response.name}' ({self._position+1}) but got '{data.hex()}'!"
 
         # Increment position
         self._position = self._position + 1
@@ -304,7 +334,7 @@ class MockDevice:
         for i, item in enumerate(self._assertions):
             assert (
                 item.called
-            ), f"Request {i} with expected bytes '{item.expected.hex()}' was not called!"
+            ), f"Request '{item.name}' ({i}) with expected bytes '{item.expected.hex()}' was not called!"
 
     async def __aexit__(self, *exc):
         """
