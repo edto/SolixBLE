@@ -11,6 +11,7 @@
  * but with additional code to prevent the anti-tamper mechanism from killing the app.
 */
 
+// Prevent anti-tamper mechanism from fully killing app
 setImmediate(function() {
     Java.perform(function() {
         var System = Java.use('java.lang.System');
@@ -28,6 +29,8 @@ setImmediate(function() {
     });
 });
 
+// Log any reads/writes to shared preferences
+// From: https://codeshare.frida.re/@ninjadiary/frinja---sharedpreferences/
 setImmediate(function() {
 	Java.perform(function() {
 		var contextWrapper = Java.use("android.content.ContextWrapper");
@@ -81,4 +84,100 @@ setImmediate(function() {
 			return stringVal;
 		}
 	});
+});
+
+// Log any encryption operations
+Java.perform(function () {
+    const Cipher = Java.use('javax.crypto.Cipher');
+
+    function toHex(byteArray) {
+        if (!byteArray) return "null";
+        var result = "";
+        for (var i = 0; i < byteArray.length; i++) {
+            result += ('0' + (byteArray[i] & 0xFF).toString(16)).slice(-2);
+        }
+        return result;
+    }
+
+    // Hook init() to capture Key, IV, Nonce, and Mode
+    const initOverloads = Cipher.init.overloads;
+    initOverloads.forEach(function (overload) {
+        overload.implementation = function () {
+            const opmode = arguments[0];
+            const key = arguments[1];
+            const iv = this.getIV();
+            const modeName = (opmode === 1) ? "ENCRYPT" : (opmode === 2) ? "DECRYPT" : opmode;
+
+            console.log("\n[+] --- Cipher.init() ---");
+            console.log("Mode: " + modeName);
+            console.log("Algorithm: " + this.getAlgorithm());
+
+            if (key) {
+                console.log("Key (Hex): " + toHex(key.getEncoded()));
+            }
+            if (iv) {
+                console.log("IV/Nonce (Hex): " + toHex(iv));
+            }
+            return overload.apply(this, arguments);
+        };
+    });
+
+    // Hook doFinal() to capture input and output of encryption algorithm
+    const doFinalOverloads = Cipher.doFinal.overloads;
+    doFinalOverloads.forEach(function (overload) {
+        overload.implementation = function () {
+            const input = arguments[0];
+            const result = overload.apply(this, arguments);
+
+            console.log("\n[+] --- Cipher.doFinal() ---");
+            if (input && input.length > 0) {
+                console.log("Input (Hex): " + toHex(input));
+            }
+            if (result && result.length > 0) {
+                console.log("Output (Hex): " + toHex(result));
+            }
+            return result;
+        };
+    });
+});
+
+// Log any Bluetooth I/O
+Java.perform(function () {
+    const BluetoothGatt = Java.use('android.bluetooth.BluetoothGatt');
+    const BluetoothGattCharacteristic = Java.use('android.bluetooth.BluetoothGattCharacteristic');
+
+    function toHex(byteArray) {
+        if (!byteArray) return "null";
+        var result = "";
+        for (var i = 0; i < byteArray.length; i++) {
+            result += ('0' + (byteArray[i] & 0xFF).toString(16)).slice(-2);
+        }
+        return result;
+    }
+
+    // Hook BluetoothGatt.writeCharacteristic (Phone -> Device)
+    const writeOverloads = BluetoothGatt.writeCharacteristic.overloads;
+    writeOverloads.forEach(function (overload) {
+        overload.implementation = function () {
+            const char = arguments[0];
+            let data = (arguments.length >= 2) ? arguments[1] : char.getValue();
+
+            console.log("\n[BLE WRITE] UUID: " + char.getUuid());
+            console.log("Data (Hex): " + toHex(data));
+            return overload.apply(this, arguments);
+        };
+    });
+
+    // Hook BluetoothGattCharacteristic.setValue (Device -> Phone)
+    const setValueOverloads = BluetoothGattCharacteristic.setValue.overloads;
+    setValueOverloads.forEach(function (overload) {
+        overload.implementation = function () {
+            const uuid = this.getUuid().toString();
+            const value = arguments[0];
+
+            console.log("\n[BLE NOTIFY] UUID: " + uuid);
+            console.log("Data (Hex): " + toHex(value))
+            return overload.apply(this, arguments);
+        };
+    });
 });
