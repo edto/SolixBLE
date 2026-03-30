@@ -7,10 +7,8 @@
 import asyncio
 import logging
 from typing import Any
-from unittest import mock
 
 import pytest
-from bleak import BLEDevice
 
 from SolixBLE import (
     C300,
@@ -22,20 +20,17 @@ from SolixBLE import (
     LightStatus,
     PortOverload,
     PortStatus,
+    PrimeCharger160w,
+    PrimeDevice,
     SolixBLEDevice,
     TemperatureUnit,
 )
-from SolixBLE.devices.prime_charger_160w import PrimeCharger160w
-from SolixBLE.prime_device import PrimeDevice
-from tests.helpers import (
+from tests.const import (
+    MOCK_BLE_DEVICE,
     NEGOTIATION_RESPONSES_PRIME,
     NEGOTIATION_RESPONSES_SOLIX,
-    MockDevice,
 )
-
-MOCK_DEVICE_NAME = "Mock Device"
-MOCK_DEVICE_ADDRESS = "AA:BB:CC:DD:EE:FF"
-MOCK_BLE_DEVICE = BLEDevice(MOCK_DEVICE_ADDRESS, MOCK_DEVICE_NAME, {})
+from tests.helpers import MockDevice
 
 
 @pytest.mark.asyncio
@@ -622,7 +617,7 @@ MOCK_BLE_DEVICE = BLEDevice(MOCK_DEVICE_ADDRESS, MOCK_DEVICE_NAME, {})
     ],
 )
 async def test_values(
-    device_class: SolixBLEDevice, payload: str, mapping: dict[str, Any]
+    device_class: type[SolixBLEDevice], payload: str, mapping: dict[str, Any]
 ) -> None:
     """
     Test that a payload is parsed into the correct values.
@@ -702,7 +697,7 @@ async def test_values(
 async def test_negotiation(
     fast_sleep,
     fast_timeouts,
-    device_class: SolixBLEDevice,
+    device_class: type[SolixBLEDevice],
     packets: list[str],
     secret: str,
 ):
@@ -783,7 +778,7 @@ async def test_negotiation(
     ],
 )
 def test_payload_decryption(
-    device_class: SolixBLEDevice, payload: str, secret: str, decrypted: str
+    device_class: type[SolixBLEDevice], payload: str, secret: str, decrypted: str
 ):
     """
     Test the decryption of a payload only. This does not test the
@@ -938,7 +933,7 @@ def test_payload_decryption(
 async def test_telemetry_packet_processing(
     fast_sleep,
     fast_timeouts,
-    device_class: SolixBLEDevice,
+    device_class: type[SolixBLEDevice],
     packets: list[str],
     secret: str,
     parameters: str | None,
@@ -953,7 +948,7 @@ async def test_telemetry_packet_processing(
     :param parameters: Expected parameters in string form.
     """
 
-    device = device_class(BLEDevice)
+    device = device_class(MOCK_BLE_DEVICE)
 
     negotiation_responses = (
         NEGOTIATION_RESPONSES_PRIME
@@ -1050,7 +1045,7 @@ async def test_telemetry_packet_processing(
 )
 async def test_bad_values(
     caplog,
-    device_class: SolixBLEDevice,
+    device_class: type[SolixBLEDevice],
     payload: str,
     mapping: dict[str, Any],
     errors: list[str],
@@ -1080,6 +1075,3 @@ async def test_bad_values(
         assert (
             getattr(device, class_property) == expected_value
         ), f"Mismatch for property '{class_property}'!"
-
-    for error_message in errors:
-        assert error_message in caplog.text

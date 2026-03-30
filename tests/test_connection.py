@@ -5,22 +5,29 @@
 """
 
 import asyncio
-from typing import Union
-from unittest.mock import patch
 
 import pytest
-from bleak import BLEDevice
 
-from SolixBLE import SolixBLEDevice, const
-from tests.helpers import NEGOTIATION_RESPONSES_SOLIX, MockDevice
-
-MOCK_DEVICE_NAME = "Mock Device"
-MOCK_DEVICE_ADDRESS = "AA:BB:CC:DD:EE:FF"
-MOCK_BLE_DEVICE = BLEDevice(MOCK_DEVICE_ADDRESS, MOCK_DEVICE_NAME, {})
+from SolixBLE import C300, PrimeCharger160w, SolixBLEDevice
+from tests.const import (
+    MOCK_BLE_DEVICE,
+    NEGOTIATION_RESPONSES_PRIME,
+    NEGOTIATION_RESPONSES_SOLIX,
+)
+from tests.helpers import MockDevice
 
 
 @pytest.mark.asyncio
-async def test_automatic_retry(fast_sleep, fast_timeouts):
+@pytest.mark.parametrize(
+    "device_class,negotiation",
+    [
+        pytest.param(C300, NEGOTIATION_RESPONSES_SOLIX, id="solix"),
+        pytest.param(PrimeCharger160w, NEGOTIATION_RESPONSES_PRIME, id="prime"),
+    ],
+)
+async def test_automatic_retry(
+    fast_sleep, fast_timeouts, device_class: type[SolixBLEDevice], negotiation: dict
+):
     """
     Test the automatic retrying of a lost connection when the
     reconnection happens within the timeout.
@@ -28,21 +35,24 @@ async def test_automatic_retry(fast_sleep, fast_timeouts):
     This test expects the module to connect the the mock device
     and then the mock device drops the connection and we expect
     the module to automatically reconnect and not run any callbacks.
+
+    :param device_class: Device class under test (e.g C300).
+    :param negotiation: Expected negotiation for the device to mock it.
     """
 
     async with MockDevice() as mock_bluetooth:
 
-        device = SolixBLEDevice(MOCK_BLE_DEVICE)
+        device = device_class(MOCK_BLE_DEVICE)
 
         def my_callback(*args, **kwargs):
             """We do not expect this callback to be triggered."""
             assert False
 
         # We first expect a negotiation
-        for expected, response in NEGOTIATION_RESPONSES_SOLIX.items():
+        for expected, responses in negotiation.items():
             mock_bluetooth.expect_ordered(
-                bytes.fromhex(expected),
-                [bytes.fromhex(x) for x in response],
+                bytes.fromhex(expected) if expected is not None else None,
+                [bytes.fromhex(response) for response in responses],
             )
 
         # We expect the negotiations to succeed
@@ -56,10 +66,11 @@ async def test_automatic_retry(fast_sleep, fast_timeouts):
         # silently reconnect
         device.add_callback(my_callback)
 
-        for expected, response in NEGOTIATION_RESPONSES_SOLIX.items():
+        # We will soon expect a renegotiation
+        for expected, responses in negotiation.items():
             mock_bluetooth.expect_ordered(
-                bytes.fromhex(expected),
-                [bytes.fromhex(x) for x in response],
+                bytes.fromhex(expected) if expected is not None else None,
+                [bytes.fromhex(response) for response in responses],
             )
 
         # We then trigger a disconnect from the device
@@ -79,7 +90,19 @@ async def test_automatic_retry(fast_sleep, fast_timeouts):
 
 
 @pytest.mark.asyncio
-async def test_automatic_retry_timeout(fast_sleep, fast_timeouts):
+@pytest.mark.parametrize(
+    "device_class,negotiation",
+    [
+        pytest.param(C300, NEGOTIATION_RESPONSES_SOLIX, id="solix"),
+        pytest.param(PrimeCharger160w, NEGOTIATION_RESPONSES_PRIME, id="prime"),
+    ],
+)
+async def test_automatic_retry_timeout(
+    fast_sleep,
+    fast_timeouts,
+    device_class: type[SolixBLEDevice],
+    negotiation: dict,
+):
     """
     Test the automatic retrying of a lost connection when
     the reconnection takes longer than the timeout.
@@ -90,11 +113,14 @@ async def test_automatic_retry_timeout(fast_sleep, fast_timeouts):
     the connection within the silent reconnect timeout and then
     we allow a reconnect and expect the module to automatically
     reconnect and run callbacks again on successful connection.
+
+    :param device_class: Device class under test (e.g C300).
+    :param negotiation: Expected negotiation for the device to mock it.
     """
 
     async with MockDevice() as mock_bluetooth:
 
-        device = SolixBLEDevice(MOCK_BLE_DEVICE)
+        device = device_class(MOCK_BLE_DEVICE)
 
         num_calls = 0
 
@@ -104,10 +130,10 @@ async def test_automatic_retry_timeout(fast_sleep, fast_timeouts):
             num_calls = num_calls + 1
 
         # We first expect a negotiation
-        for expected, response in NEGOTIATION_RESPONSES_SOLIX.items():
+        for expected, responses in negotiation.items():
             mock_bluetooth.expect_ordered(
-                bytes.fromhex(expected),
-                [bytes.fromhex(x) for x in response],
+                bytes.fromhex(expected) if expected is not None else None,
+                [bytes.fromhex(response) for response in responses],
             )
 
         # We expect the negotiations to succeed
@@ -135,10 +161,10 @@ async def test_automatic_retry_timeout(fast_sleep, fast_timeouts):
         mock_bluetooth.allow_connect()
 
         # We then expect a renegotiation
-        for expected, response in NEGOTIATION_RESPONSES_SOLIX.items():
+        for expected, responses in negotiation.items():
             mock_bluetooth.expect_ordered(
-                bytes.fromhex(expected),
-                [bytes.fromhex(x) for x in response],
+                bytes.fromhex(expected) if expected is not None else None,
+                [bytes.fromhex(response) for response in responses],
             )
 
         # We expect to have been automatically reconnected
@@ -154,18 +180,33 @@ async def test_automatic_retry_timeout(fast_sleep, fast_timeouts):
 
 
 @pytest.mark.asyncio
-async def test_disconnect(fast_timeouts, fast_sleep):
+@pytest.mark.parametrize(
+    "device_class,negotiation",
+    [
+        pytest.param(C300, NEGOTIATION_RESPONSES_SOLIX, id="solix"),
+        pytest.param(PrimeCharger160w, NEGOTIATION_RESPONSES_PRIME, id="prime"),
+    ],
+)
+async def test_disconnect(
+    fast_timeouts,
+    fast_sleep,
+    device_class: type[SolixBLEDevice],
+    negotiation: dict,
+):
     """
     Test the mock device is disconnected and no automatic
     reconnection attempts are executed when disconnect is called.
 
     We also expect no callbacks to be run and multiple calls
     to disconnect to do nothing.
+
+    :param device_class: Device class under test (e.g C300).
+    :param negotiation: Expected negotiation for the device to mock it.
     """
 
     async with MockDevice() as mock_bluetooth:
 
-        device = SolixBLEDevice(MOCK_BLE_DEVICE)
+        device = device_class(MOCK_BLE_DEVICE)
 
         async def assert_still_disconnected():
             """Assert that device is still disconnected."""
@@ -186,10 +227,10 @@ async def test_disconnect(fast_timeouts, fast_sleep):
             assert False
 
         # We first expect a negotiation
-        for expected, response in NEGOTIATION_RESPONSES_SOLIX.items():
+        for expected, responses in negotiation.items():
             mock_bluetooth.expect_ordered(
-                bytes.fromhex(expected),
-                [bytes.fromhex(x) for x in response],
+                bytes.fromhex(expected) if expected is not None else None,
+                [bytes.fromhex(response) for response in responses],
             )
 
         # We expect the negotiations to succeed

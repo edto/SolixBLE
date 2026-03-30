@@ -4,7 +4,27 @@ Constants used inside tests.
 .. moduleauthor:: Harvey Lelliott (flip-dots) <harveylelliott@duck.com>
 """
 
-from SolixBLE import prime_device
+from bleak import BLEDevice
+
+from SolixBLE import const, prime_device
+
+MOCK_DEVICE_NAME = "Mock Device"
+"""
+Mock device name used to emulate Anker devices for tests.
+"""
+
+MOCK_DEVICE_ADDRESS = "AA:BB:CC:DD:EE:FF"
+"""
+Mock bluetooth address used to emulate Anker devices for tests.
+"""
+
+MOCK_BLE_DEVICE = BLEDevice(
+    address=MOCK_DEVICE_ADDRESS, name=MOCK_DEVICE_NAME, details={}, rssi=-1
+)
+"""
+Mock BLEDevice used to emulate Anker devices for tests.
+"""
+
 
 NEGOTIATION_RESPONSES_PRIME: dict[str, list[str]] = {
     prime_device.NEGOTIATION_COMMAND_0: [
@@ -39,4 +59,24 @@ NEGOTIATION_RESPONSES_PRIME: dict[str, list[str]] = {
 """
 This maps the expected commands sent by the library to what my Anker Prime 160w
 charger sends in response. Its used to emulate it for testing negotiations.
+"""
+
+
+NEGOTIATION_RESPONSES_SOLIX: dict[str, list[str]] = {
+    const.NEGOTIATION_COMMAND_0: ["ff090e00030001080100a1010152"],
+    const.NEGOTIATION_COMMAND_1: [
+        "ff091b00030001080300a10102a202fd00a30144a40101a50102ff"
+    ],
+    const.NEGOTIATION_COMMAND_2: [
+        "ff093800030001082900a10103a2054553503332a307302e302e302e33a41041504339464530453237333030323735a506f49d8a104e0c9a"
+    ],
+    const.NEGOTIATION_COMMAND_3: ["ff090b00030001080500f2"],
+    const.NEGOTIATION_COMMAND_4: [
+        "ff094d00030001082100a140b2ade5cac4f4a0c1307e44a0e9c5363cb21e4c8485ee324c23be949fa5d5929a75e57da3207c948a0c366ca9ea1ab2cb8e57d2d046a6ebefe5d96adb5d4cb35039"
+    ],
+    const.NEGOTIATION_COMMAND_5: [],
+}
+"""
+This maps the expected commands sent by the library to what my Anker Solix C300
+sends in response. Its used to emulate it for testing negotiations.
 """

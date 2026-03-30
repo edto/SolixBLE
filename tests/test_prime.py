@@ -8,7 +8,7 @@ import pytest
 
 from SolixBLE import prime_device
 from SolixBLE.prime_device import PrimeDevice
-from tests.test_connection import MOCK_BLE_DEVICE
+from tests.const import MOCK_BLE_DEVICE
 
 
 @pytest.mark.parametrize(
@@ -68,9 +68,7 @@ def test_negotiation_encryption_session(
     prime._shared_secret = bytes.fromhex(shared_secret)
 
     decrypted = prime._decrypt_payload(payload)
-
     assert decrypted.hex() == decrypted_payload
 
     re_encrypted = prime._encrypt_payload(decrypted)
-
     assert payload.hex() == re_encrypted.hex()
