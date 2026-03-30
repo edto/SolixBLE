@@ -27,8 +27,8 @@ class PortStatus(Enum):
         """Custom factory for ports which only support being inputs."""
 
         # If it would be an output (i.e 1) set it to input (i.e 2).
-        if value == PortStatus.OUTPUT:
-            value = PortStatus.INPUT
+        if value == PortStatus.OUTPUT.value:
+            value = PortStatus.INPUT.value
 
         return cls(value)
 
@@ -47,25 +47,6 @@ class ChargingStatus(Enum):
 
     #: The device is charging.
     CHARGING = 2
-
-
-class ChargingStatusC300DC(Enum):
-    """The charging type of a C300 DC."""
-
-    #: The status is unknown.
-    UNKNOWN = -1
-
-    #: The device is idle.
-    INACTIVE = 0
-
-    #: The device is charging via solar.
-    SOLAR = 1
-
-    #: The device is charging via DC.
-    DC = 2
-
-    #: The device is charging via solar and DC.
-    BOTH = 3
 
 
 class ChargingStatusF3800(Enum):
@@ -129,3 +110,33 @@ class DisplayTimeout(Enum):
 
     #: 1800 seconds (30m).
     S1800 = 1800
+
+class TemperatureUnit(Enum):
+    """The status of the temperature unit of the device."""
+
+    #: The display unit is unknown.
+    UNKNOWN = -1
+
+    #: Display unit Celsius.
+    CELSIUS = 0
+
+    #: Display unit is Fahrenheit.
+    FAHRENHEIT = 1
+
+class PortOverload(Enum):
+    """The overload status of a port."""
+
+    #: Overload status is unknown.
+    UNKNOWN = -1
+
+    #: No overload event.
+    NONE = 0
+
+    #: USB C1 overload detected.
+    USB_C1 = 8
+
+    #: USB C2 overload detected.
+    USB_C2 = 9
+
+    #: USB C3 overload detected.
+    USB_C3 = 10

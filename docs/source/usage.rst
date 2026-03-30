@@ -9,8 +9,8 @@ Usage
 It is recommended you read through the :doc:`examples <examples>` first to obtain an
 understanding of the intended usage before diving into the documentation.
 
-General approach
-----------------
+Concept
+-------
 
 This module connects to a device, negotiates a session with it,
 and then periodically receives state updates from it and caches the state
@@ -24,8 +24,8 @@ state of the device changes.
     relatively idle. Some devices support requesting a status update manually.
 
 
-Functions
----------
+Tasks
+-----
 
 Finding a device
 ^^^^^^^^^^^^^^^^

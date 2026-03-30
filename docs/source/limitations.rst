@@ -21,6 +21,18 @@ possible to connect to it. This behavior has been observed even with the connect
 The solution to this issue (as it often is with software issues) is to turn the device off then on again.
 
 
+Updates
+-------
+
+Anker devices only send telemetry updates when something changes. This means that if nothing is
+plugged in to your device or it is drawing a constant load, you may not see any updates for 
+a significant period of time. The same thing applies for initialization, the values will only
+be populated when the first telemetry update is received. This can be solved by plugging in
+a device with a variable load or some devices support requesting a status update (C300, C800, C1000).
+If you wish to add support for requesting status updates for your device, see the 
+:doc:`app decoding <app_decoding>` section.
+
+
 Device support
 --------------
 

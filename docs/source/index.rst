@@ -53,19 +53,19 @@ DC Power in             ✅        ✅          ✅        ✅        ✅       
 DC Power out            ✅        ✅          ❌        ❌        ✅         ✅           ✅  
 DC Power in status      ✅        ✅          ❌        ❌        ✅         ❌           ❌ 
 DC Power out status     ✅        ❌          ❌        ❌        ✅         ❌           ✅   
-DC Timer                ✅        ❌          ❌        ❌        ❌         ❌           ❌ 
+DC Timer                ✅        ✅          ❌        ❌        ❌         ❌           ❌ 
 USB Power out           ✅        ✅          ✅        ✅        ✅         ✅           ✅     
 USB Port status         ✅        ✅          ❌        ❌        ✅         ❌           ✅ 
 Light control           ✅        ❌          ✅        ✅        ❌         ❌           ❌  
 Light status            ✅        ✅          ❌        ❌        N/A        ❌           ❌ 
 Display on/off control  ✅        ❌          ✅        ✅        ❌         ❌           ❌ 
-Display on/off status   ❌        ❌          ❌        ❌        ❌         ❌           ❌ 
+Display on/off status   ❌        ✅          ❌        ❌        ❌         ❌           ❌ 
 Display brightness ctrl ✅        ❌          ✅        ✅        ❌         ❌           ❌ 
 Display brightness stat ❌        ✅          ❌        ❌        ❌         ❌           ❌ 
 Display timeout ctrl    ✅        ❌          ✅        ✅        ❌         ❌           ❌ 
 Display timeout stat    ❌        ✅          ❌        ❌        ❌         ❌           ❌
-Firmware version        ✅        ❌          ✅        ✅        ❌         ✅           ✅  
-Serial number           ✅        ❌          ✅        ✅        ✅         ✅           ✅     
+Firmware version        ✅        ✅          ✅        ✅        ❌         ✅           ✅  
+Serial number           ✅        ✅          ✅        ✅        ✅         ✅           ✅     
 Expansion temperature   N/A       N/A         N/A      ✅        N/A       ✅           ❌  
 Expansion percentage    N/A       N/A         N/A      ✅        N/A       ✅           ✅  
 Expansion health        N/A       N/A         N/A      ✅        N/A       ✅           ❌    
@@ -159,4 +159,5 @@ Contents
    api
    limitations
    new_devices
+   app_decoding
    source

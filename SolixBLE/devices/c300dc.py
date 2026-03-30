@@ -6,9 +6,14 @@
 
 from datetime import datetime, timedelta
 
-from ..const import DEFAULT_METADATA_BOOL, DEFAULT_METADATA_FLOAT, DEFAULT_METADATA_INT
+from ..const import (
+    DEFAULT_METADATA_BOOL,
+    DEFAULT_METADATA_FLOAT,
+    DEFAULT_METADATA_INT,
+    DEFAULT_METADATA_STRING,
+)
 from ..device import SolixBLEDevice
-from ..states import ChargingStatusC300DC, LightStatus, PortStatus
+from ..states import ChargingStatus, LightStatus, PortStatus, TemperatureUnit, PortOverload
 
 
 class C300DC(SolixBLEDevice):
@@ -18,20 +23,29 @@ class C300DC(SolixBLEDevice):
     Use this class to connect and monitor a C300(X) DC power station.
     This model is also known as the A1728.
 
-    .. note::
-        This model was added using data from anker-solix-api. It has not been
-        tested!
-
-    .. note::
-        It should be possible to add more sensors. I think devices with lots of
-        telemetry values split them up into multiple messages but I have not
-        played around with this yet. That and I am being a bit conservative with
-        these initial implementations, if you want more sensors and are willing
-        to help with testing feel free to raise a GitHub issue.
-
     """
 
     _EXPECTED_TELEMETRY_LENGTH: int = 253
+
+    @property
+    def dc_timer_remaining(self) -> int:
+        """Time remaining on DC timer.
+
+        :returns: Seconds remaining or default int value.
+        """
+        return self._parse_int("a2", begin=1)
+
+    @property
+    def dc_timer(self) -> datetime | None:
+        """Timestamp of DC timer.
+
+        :returns: Timestamp of when DC timer expires or None.
+        """
+        if (
+            self.dc_timer_remaining != DEFAULT_METADATA_INT
+            and self.dc_timer_remaining != 0
+        ):
+            return datetime.now() + timedelta(seconds=self.dc_timer_remaining)
 
     @property
     def hours_remaining(self) -> float:
@@ -134,10 +148,10 @@ class C300DC(SolixBLEDevice):
         return self._parse_int("a9", begin=1)
 
     @property
-    def dc_power_in(self) -> int:
-        """DC Power In.
+    def dc_power_out(self) -> int:
+        """DC Power Out.
 
-        :returns: DC power in or default int value.
+        :returns: DC power out or default int value.
         """
         return self._parse_int("aa", begin=1)
 
@@ -166,6 +180,25 @@ class C300DC(SolixBLEDevice):
         return self._parse_int("ad", begin=1)
 
     @property
+    def battery_capacity(self) -> int:
+        """Current battery capacity in mAh.
+
+        :returns: Current battery capacity or default int value.
+        """
+        return self._parse_int("af", begin=1)
+
+    @property
+    def software_version(self) -> str:
+        """Main software version.
+
+        :returns: Firmware version or default str value.
+        """
+        if self._data is None:
+            return DEFAULT_METADATA_STRING
+
+        return ".".join([digit for digit in str(self._parse_int("b0", begin=1))])
+
+    @property
     def temperature(self) -> int:
         """Temperature of the unit (C).
 
@@ -174,12 +207,12 @@ class C300DC(SolixBLEDevice):
         return self._parse_int("b5", begin=1, signed=True)
 
     @property
-    def charging_status(self) -> ChargingStatusC300DC:
+    def charging_status(self) -> ChargingStatus:
         """Charging status of the device.
 
         :returns: Status of charging.
         """
-        return ChargingStatusC300DC(self._parse_int("b6", begin=1))
+        return ChargingStatus(self._parse_int("b6", begin=1))
 
     @property
     def battery_percentage(self) -> int:
@@ -246,37 +279,105 @@ class C300DC(SolixBLEDevice):
         return PortStatus(self._parse_int("be", begin=1))
 
     @property
-    def is_light_on(self) -> bool:
-        """Status of main light.
+    def dc_port(self) -> PortStatus:
+        """DC Port Status.
 
-        :returns: Is main light on or default bool value.
+        :returns: Status of the DC port.
         """
-        return (
-            bool(self._parse_int("bf", begin=1))
-            if self._data is not None
-            else DEFAULT_METADATA_BOOL
-        )
+        return PortStatus(self._parse_int("bf", begin=1))
 
     @property
-    def dc_output_timeout(self) -> int:
-        """DC output timeout in seconds.
+    def device_overload(self) -> PortOverload:
+        """Device overload status.
 
-        :returns: DC output timeout or default int value.
+        :returns: Device overload status or default int value.
         """
-        return PortStatus(self._parse_int("c4", begin=1))
+        return PortOverload(self._parse_int("c1", begin=1))
+
+    @property
+    def serial_number(self) -> str:
+        """Serial number.
+
+        :returns: The serial number of the device.
+        """
+        return self._parse_string("c3", begin=1)
+
+    @property
+    def device_timeout(self) -> int:
+        """Configured device timeout in minutes.
+
+        :returns: Configured device timeout or default int value.
+        """
+        return self._parse_int("c4", begin=1)
 
     @property
     def display_timeout(self) -> int:
-        """Display timeout in seconds.
+        """Configured display timeout in seconds.
 
-        :returns: Display timeout or default in value.
+        :returns: Configured display timeout or default int value.
         """
         return self._parse_int("c5", begin=1)
 
     @property
     def display_mode(self) -> LightStatus:
-        """Display mode / Brightness.
+        """Configured display backlight brightness.
+
+        :returns: Configured display backlight brightness.
+        """
+        return LightStatus(self._parse_int("c7", begin=1))
+
+    @property
+    def light(self) -> LightStatus:
+        """Light Status.
+
+        :returns: Status of the light bar.
+        """
+        return LightStatus(self._parse_int("c8", begin=1))
+
+    @property
+    def temperature_unit(self) -> TemperatureUnit:
+        """Configured temperature unit (returned temperature is always in degrees C).
+
+        :returns: Configured temperature unit or default int value.
+        """
+        return TemperatureUnit(self._parse_int("c9", begin=1))
+
+    @property
+    def is_display_on(self) -> bool:
+        """Display on status.
 
         :returns: Status of the display.
         """
-        return LightStatus(self._parse_int("c8", begin=1))
+        return (
+            bool(self._parse_int("ca", begin=1))
+            if self._data is not None
+            else DEFAULT_METADATA_BOOL
+        )
+
+    @property
+    def light_timeout(self) -> int:
+        """Configured light timeout in minutes.
+
+        :returns: Configured light timeout or default int value.
+        """
+        return self._parse_int("cb", begin=1)
+
+    @property
+    def solar_port(self) -> PortStatus:
+        """Solar Port Status.
+
+        :returns: Status of the solar port.
+        """
+        return PortStatus.from_input_only(self._parse_int("cd", begin=1))
+
+    @property
+    def dc_12v_auto_on(self) -> bool:
+        """Configured DC Port Auto On.
+
+        :returns: Status of the DC auto on mode.
+        """
+        return (
+            bool(self._parse_int("f7", begin=1))
+            if self._data is not None
+            else DEFAULT_METADATA_BOOL
+        )

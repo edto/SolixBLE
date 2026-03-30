@@ -34,6 +34,18 @@ important to add tests to ensure that any future changes do not break compatibil
 aim to flip every state at least once (e.g AC charging, AC discharging, DC charging, USB discharging, etc).
 
 
+.. _new_device_control:
+
+Control
+-------
+
+If you wish to add support for controlling a function of a device, you must first figure out what
+command the Anker app sends to perform that operation. See the :doc:`app decoding <app_decoding>`
+section for more information on how to capture these commands and the :doc:`C300 <c300>`, 
+:doc:`800 <c800>`, and :doc:`C1000 <c1000>` source code for examples of how to implement the 
+control functions.
+
+
 Example telemetry data
 ----------------------
 

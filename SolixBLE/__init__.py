@@ -22,11 +22,12 @@ from .devices import (
 from .prime_device import PrimeDevice
 from .states import (
     ChargingStatus,
-    ChargingStatusC300DC,
     ChargingStatusF3800,
     DisplayTimeout,
     LightStatus,
     PortStatus,
+    TemperatureUnit,
+    PortOverload,
 )
 from .utilities import discover_devices
 
@@ -46,10 +47,11 @@ __all__ = [
     "PrimeCharger250w",
     "Generic",
     "ChargingStatus",
-    "ChargingStatusC300DC",
     "ChargingStatusF3800",
     "DisplayTimeout",
     "LightStatus",
     "PortStatus",
+    "TemperatureUnit",
+    "PortOverload",
     "discover_devices",
 ]
