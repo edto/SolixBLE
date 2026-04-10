@@ -16,10 +16,6 @@ class Solarbank2(SolixBLEDevice):
     This model is also known as the A17C1.
 
     .. note::
-        This model was added using data from anker-solix-api. It has not been
-        tested!
-
-    .. note::
         It should be possible to add more sensors. I think devices with lots of
         telemetry values split them up into multiple messages but I have not
         played around with this yet. That and I am being a bit conservative with

@@ -62,8 +62,8 @@ class SolixBLEDevice:
 
         self._ble_device: BLEDevice = ble_device
         self._client: BleakClient | None = None
-        self._telemetry_payload_small: bytes | None = None
-        self._telemetry_payload_large: bytes | None = None
+        self._fragment_buffers: dict[bytes, dict[int, bytes]] = {}
+        self._fragment_totals: dict[bytes, int] = {}
         self._data: dict[str, bytes] | None = None
         self._last_data_timestamp: datetime | None = None
         self._last_packet_timestamp: datetime | None = None
@@ -347,11 +347,6 @@ class SolixBLEDevice:
         # Extract command
         packet_cmd = bytes([packet_copy.pop(0), packet_copy.pop(0)])
 
-        # Telemetry packets have an extra field which must be popped
-        if packet_pattern.hex() == "03010f" and packet_cmd.hex() == "c402":
-            special_value = bytes([packet_copy.pop(0)])
-            _LOGGER.debug(f"Special value: {special_value.hex()}")
-
         # Extract payload
         packet_payload = bytes(packet_copy)
 
@@ -498,7 +493,7 @@ class SolixBLEDevice:
         )
         return cipher.encrypt(padded_data)
 
-    async def _process_telemetry_packet(self, payload: bytes) -> None:
+    async def _process_telemetry_packet(self, payload: bytes, cmd: bytes = None) -> None:
         """Process a telemetry packet from the device.
 
         This performs the default processing of telemetry packets in which
@@ -507,40 +502,46 @@ class SolixBLEDevice:
         telemetry.
         """
 
-        # Anker devices seem to split data across multiple
-        # packets so we need to wait until we have both
-        # packets before we can decrypt all of the data
-        if len(payload) < 50:
-            self._telemetry_payload_small = payload
+        # First byte encodes fragment info (high nibble = index, low = total)
+        fragment_index = (payload[0] >> 4) & 0x0F
+        fragment_total = payload[0] & 0x0F
 
-        # If we receive a big packet it invalidates the
-        # last small one since the big one comes before
-        # the small one
-        elif len(payload) > 230:
-            self._telemetry_payload_large = payload
-            self._telemetry_payload_small = None
-
-        else:
-            _LOGGER.warning(
-                f"Telemetry payload has an unexpected length of {len(payload)}!"
+        # Multi-part message
+        if fragment_total > 1:
+            fragment_data = payload[1:]
+            cmd_key = bytes(cmd)
+            _LOGGER.debug(
+                f"Fragment {fragment_index}/{fragment_total} for cmd {cmd.hex()}, {len(fragment_data)} bytes"
             )
 
-        if (
-            self._telemetry_payload_small is None
-            or self._telemetry_payload_large is None
-        ):
-            _LOGGER.debug("Missing other payload!")
-            return
+            # Store fragment
+            if cmd_key not in self._fragment_buffers or fragment_index == 1:
+                self._fragment_buffers[cmd_key] = {}
+                self._fragment_totals[cmd_key] = fragment_total
 
-        new_payload = self._telemetry_payload_large + self._telemetry_payload_small
+            self._fragment_buffers[cmd_key][fragment_index] = fragment_data
 
-        # If we are accepting the new payload we invalidate
-        # the partial payloads
-        self._telemetry_payload_large = None
-        self._telemetry_payload_small = None
+            # Wait until all fragments have arrived
+            if len(self._fragment_buffers[cmd_key]) < fragment_total:
+                _LOGGER.debug("Waiting for remaining fragments...")
+                return
 
-        _LOGGER.debug(f"Merged payload: {new_payload.hex()}")
-        decrypted_payload = self._decrypt_payload(new_payload)
+            # Reassemble in order
+            payload = b"".join(
+                self._fragment_buffers[cmd_key][i]
+                for i in sorted(self._fragment_buffers[cmd_key])
+            )
+            del self._fragment_buffers[cmd_key]
+            del self._fragment_totals[cmd_key]
+            _LOGGER.debug(
+                f"Reassembled payload: {len(payload)} bytes"
+            )
+
+        else:
+            # Strip fragment info
+            payload = payload[1:]
+        
+        decrypted_payload = self._decrypt_payload(payload)
         _LOGGER.debug(f"Decrypted payload: {decrypted_payload.hex()}")
         parameters = self._parse_payload(decrypted_payload)
         return await self._process_telemetry(parameters)
@@ -584,7 +585,7 @@ class SolixBLEDevice:
     ) -> None:
         """Process a notification from the device."""
 
-        _LOGGER.debug(f"The client the notification is from is: {client}")
+        _LOGGER.debug(f"The client the notification is from: {client}")
 
         if self._client is not client:
             _LOGGER.debug("Ignoring notification from old client")
@@ -625,9 +626,9 @@ class SolixBLEDevice:
                 match cmd.hex():
 
                     # Telemetry messages
-                    case "c402" | "4300":
+                    case "c402" | "4300" | "c405":
                         _LOGGER.debug("Received telemetry message!")
-                        return await self._process_telemetry_packet(payload)
+                        return await self._process_telemetry_packet(payload, cmd)
 
                     # Unknown messages
                     case _:
@@ -1041,8 +1042,8 @@ class SolixBLEDevice:
             self._data = None
             self._last_data_timestamp = None
 
-        self._telemetry_payload_small = None
-        self._telemetry_payload_large = None
+        self._fragment_buffers = {}
+        self._fragment_totals = {}
         self._shared_secret = None
         self._last_packet_timestamp = None
         self._negotiation_timestamp = None

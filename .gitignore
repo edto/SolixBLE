@@ -3,3 +3,4 @@ __pycache__
 .coverage
 SolixBLE.egg-info
 docs/_build
+.venv/
