@@ -90,20 +90,20 @@ Solar energy in                     ✅           ✅
 Individual solar power in           ✅           ✅
 Battery power in/out                ✅           ✅
 Battery energy in                   ✅           ✅
-Battery energy out                  ❌           ✅
+Battery energy out                  ✅           ✅
 Battery percentage                  ✅           ✅
 Battery percentage aggregate        ✅           ✅
 Expansion battery percentage        ❌           ❌
-Charging status                     ❌           ❌
+Charging status                     ✅           ❌
 Battery health                      ❌           ✅
 Expansion battery health            ❌           ❌
 Temperature                         ✅           ✅
-Temperature unit                    ❌           ❌
+Temperature unit                    ✅           ❌
 Expansion battery temperature       ❌           ❌
-Battery heating                     ❌           ❌
+Battery heating                     ✅           ❌
 Batter heating power                ❌           ❌
-Grid status                         ❌           ❌
-Grid power in/out                   ❌           ✅
+Grid status                         ✅           ❌
+Grid power in/out                   ❔           ✅
 Grid to Home power                  ✅           ✅
 PV to Grid power                    ✅           ❌
 Grid import energy                  ✅           ✅
@@ -112,12 +112,13 @@ Grid export disable/enable          ❌           ❌
 House demand                        ✅           ✅
 House consumption                   ❌           ✅
 Consumed energy                     ✅           ❌
-Error codes                         ❌           ❌
-Max load                            ❌           ❌
-Usage mode                          ❌           ❌
+Error codes                         ✅           ❌
+Max load                            ✅           ❌
+Usage mode                          ✅           ❌
 Presets                             ❌           ❌
-Light mode                          ❌           ❌
+Light mode                          ✅           ❌
 PV limitations                      ❌           ❌
+PV panel stats                      ✅           ❌
 AC limitations                      ❌           ❌
 Software version                    ✅           ❌  
 Software version controller         ✅           ❌
