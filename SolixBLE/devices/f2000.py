@@ -1,8 +1,11 @@
-"""F2000(P) / 767 PowerHouse power station model.
+import asyncio
+import logging
+import time
+from functools import partial
+_LOGGER = logging.getLogger(__name__)
+from bleak import BleakClient, BleakError
+from bleak_retry_connector import establish_connection
 
-.. moduleauthor:: Harvey Lelliott (flip-dots) <harveylelliott@duck.com>
-
-"""
 
 from datetime import datetime, timedelta
 
@@ -10,6 +13,7 @@ from ..const import (
     DEFAULT_METADATA_FLOAT,
     DEFAULT_METADATA_INT,
     DEFAULT_METADATA_STRING,
+    UUID_TELEMETRY,
 )
 from ..device import SolixBLEDevice
 
@@ -34,7 +38,152 @@ class F2000(SolixBLEDevice):
 
     """
 
-    _EXPECTED_TELEMETRY_LENGTH: int = 253
+    _EXPECTED_TELEMETRY_LENGTH: int = 102
+
+    _EXPECTED_TELEMETRY_LENGTH: int = 102
+
+    @property
+    def negotiated(self) -> bool:
+        """F2000 legacy BLE path does not use the generic negotiated protocol."""
+        return self.connected
+
+    @property
+    def available(self) -> bool:
+        """Connected to device and raw telemetry has been received."""
+        return self.connected and self._data is not None
+
+    async def connect(self, max_attempts: int = 3, run_callbacks: bool = True) -> bool:
+        """Connect to F2000 using direct notify on 8888 and skip generic negotiation."""
+        self._connection_attempts = self._connection_attempts + 1
+
+        try:
+            if self._client is not None:
+                await self._dispose_of_client()
+
+            self._reset_session(reset_data=False)
+
+            self._client = await establish_connection(
+                BleakClient,
+                device=self._ble_device,
+                name=self.address,
+                max_attempts=max_attempts,
+                use_services_cache=False,
+                disconnected_callback=self._disconnect_callback,
+            )
+        except BleakError:
+            _LOGGER.exception(f"Error establishing initial connection to '{self.name}'!")
+            return False
+
+        if not self.connected:
+            _LOGGER.error(
+                f"Failed to establish initial connection to '{self.name}' on attempt {self._connection_attempts}!"
+            )
+            return False
+
+        _LOGGER.debug(
+            f"Established initial F2000 connection to '{self.name}' on attempt {self._connection_attempts}!"
+        )
+
+        try:
+            await self._client.start_notify(
+                UUID_TELEMETRY,
+                partial(self._process_notification, self._client),
+            )
+        except BleakError:
+            _LOGGER.exception(f"Error subscribing to F2000 telemetry on '{self.name}'!")
+            return False
+
+        self._connection_attempts = 0
+
+        if self._disconnect_event.is_set():
+            self._disconnect_event.clear()
+
+        if self._auto_reconnect_task is None:
+            self._auto_reconnect_task = asyncio.create_task(self._auto_reconnect())
+
+        if run_callbacks:
+            self._run_state_changed_callbacks()
+
+        return True
+
+    def _default_parameters(self) -> dict[str, bytes]:
+        """Populate keys expected by the existing F2000 properties."""
+        params = {
+            "a4": b"\x01\x00",
+            "a5": b"\x01\x00",
+            "a6": b"\x01\x00",
+            "a7": b"\x01\x00",
+            "a8": b"\x01\x00",
+            "a9": b"\x01\x00",
+            "aa": b"\x01\x00",
+            "ab": b"\x01\x00",
+            "ac": b"\x01\x00",
+            "ad": b"\x01\x00",
+            "ae": b"\x01\x00",
+            "af": b"\x01\x00",
+            "b0": b"\x01\x00",
+            "b3": b"\x01\x00",
+            "b9": b"\x01\x00",
+            "ba": b"\x01\x00",
+            "bd": b"\x01\x00",
+            "be": b"\x01\x00",
+            "c1": b"\x01\x00",
+            "c2": b"\x01\x00",
+            "c3": b"\x01\x00",
+            "c4": b"\x01\x00",
+            "c5": b"\x01\x00",
+            "d0": b"\x10" + b"0" * 16,
+        }
+        return params
+
+    def _parse_raw_telemetry(self, raw: bytes) -> dict[str, bytes]:
+        """
+        Minimal raw F2000 parser.
+
+        This is a transport proof-of-concept parser that accepts the observed
+        09ff/ff09 102-byte frame and fills placeholder parameter keys so the
+        existing F2000 property accessors do not crash.
+        """
+        params = self._default_parameters()
+
+        # Best effort serial number extraction from the last 16 bytes if printable.
+        if len(raw) >= 16:
+            tail = raw[-16:]
+            if all(32 <= b < 127 for b in tail):
+                params["d0"] = b"\x10" + tail
+
+        return params
+
+    async def _process_notification(
+        self, client: BleakClient, handle: int, data: bytearray
+    ) -> None:
+        """Process raw F2000 notifications from 8888 without generic packet splitting."""
+        if self._client is not client:
+            _LOGGER.debug("Ignoring notification from old client")
+            return
+
+        raw = bytes(data)
+        self._last_packet_timestamp = time.time()
+
+        _LOGGER.debug(
+            f"Received raw F2000 notification from '{self.name}'. length: {len(raw)}, packet: '{raw.hex()}'"
+        )
+
+        if len(raw) < 4:
+            _LOGGER.debug("Ignoring short F2000 notification")
+            return
+
+        if raw[:2] not in (bytes.fromhex("09ff"), bytes.fromhex("ff09")):
+            _LOGGER.debug(f"Ignoring non-F2000 frame header: {raw[:2].hex()}")
+            return
+
+        if len(raw) != self._EXPECTED_TELEMETRY_LENGTH:
+            _LOGGER.debug(
+                f"Unexpected F2000 raw telemetry length {len(raw)} (expected {self._EXPECTED_TELEMETRY_LENGTH})"
+            )
+
+        parameters = self._parse_raw_telemetry(raw)
+        await self._process_telemetry(parameters)
 
     @property
     def hours_remaining(self) -> float:
