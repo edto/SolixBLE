@@ -320,8 +320,10 @@ class SolixBLEDevice:
 
         # Validate header is correct
         packet_header = bytes([packet_copy.pop(0), packet_copy.pop(0)])
+        if packet_header == bytes.fromhex("09ff"):
+            packet_header = bytes.fromhex("ff09")
         if packet_header != bytes.fromhex("ff09"):
-            raise ValueError("Packet does not start with FF09!")
+            raise ValueError(f"Packet does not start with FF09! Got {packet_header.hex()}")
 
         # Validate encoded length is correct
         packet_length = int.from_bytes(
