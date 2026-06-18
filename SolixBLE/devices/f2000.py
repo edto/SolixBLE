@@ -40,8 +40,6 @@ class F2000(SolixBLEDevice):
 
     _EXPECTED_TELEMETRY_LENGTH: int = 102
 
-    _EXPECTED_TELEMETRY_LENGTH: int = 102
-
     @property
     def negotiated(self) -> bool:
         """F2000 legacy BLE path does not use the generic negotiated protocol."""
@@ -138,19 +136,62 @@ class F2000(SolixBLEDevice):
 
     def _parse_raw_telemetry(self, raw: bytes) -> dict[str, bytes]:
         """
-        Minimal raw F2000 parser.
+        Best-effort raw F2000 parser for the observed 102-byte 09FF frame.
 
-        This is a transport proof-of-concept parser that accepts the observed
-        09ff/ff09 102-byte frame and fills placeholder parameter keys so the
-        existing F2000 property accessors do not crash.
+        This maps a few known fields into the parameter keys expected by the
+        existing F2000 property methods. The packet appears to use big-endian
+        16-bit words, while the existing property helpers expect little-endian
+        values after skipping the first byte, so we store values as:
+            b"\\x01" + value.to_bytes(2, "little")
         """
+
         params = self._default_parameters()
 
-        # Best effort serial number extraction from the last 16 bytes if printable.
-        if len(raw) >= 16:
-            tail = raw[-16:]
+        if len(raw) < 102:
+            return params
+
+        def be16(offset: int) -> int:
+            return int.from_bytes(raw[offset:offset + 2], byteorder="big", signed=False)
+
+        def set_param_u16(key: str, value: int) -> None:
+            params[key] = b"\x01" + int(value).to_bytes(2, byteorder="little", signed=False)
+
+        def set_param_s16(key: str, value: int) -> None:
+            params[key] = b"\x01" + int(value).to_bytes(2, byteorder="little", signed=True)
+
+        # Observed / inferred mappings from your live packet:
+        # battery % ~= 35 -> word 0035
+        # remaining time ~= 5.3h -> word 0033 (tenths of hours)
+        # AC/socket output ~= 127W -> word 0081
+        #
+        # Offsets below are byte offsets in the raw 102-byte frame.
+        # They are best-effort and may need adjustment as more captures come in.
+
+        battery_pct = be16(18)       # 0035
+        output_w_1 = be16(42)        # 0081
+        output_w_2 = be16(54)        # 0081
+        remaining_tenths = be16(64)  # 0033
+        temp_c = be16(74)            # 001E -> 30 C looks plausible
+
+        set_param_u16("c1", battery_pct)
+        set_param_u16("a4", remaining_tenths)
+        set_param_u16("a6", output_w_1)
+        set_param_u16("b0", output_w_2)
+        set_param_s16("bd", temp_c)
+
+        # These still need confirmed mappings, keep them zeroed for now.
+        set_param_u16("ae", 0)  # solar_power_in
+        set_param_u16("af", 0)  # ac_power_in
+        set_param_u16("c2", 0)  # expansion battery %
+        set_param_u16("c3", 100)  # temporary battery health default
+        set_param_u16("c4", 0)
+        set_param_u16("c5", 0)
+
+        # Best-effort serial extraction from tail ASCII.
+        if len(raw) >= 18:
+            tail = raw[-18:-2]
             if all(32 <= b < 127 for b in tail):
-                params["d0"] = b"\x10" + tail
+                params["d0"] = bytes([len(tail)]) + tail
 
         return params
 
