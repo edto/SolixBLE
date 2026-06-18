@@ -57,7 +57,9 @@ class F2000(SolixBLEDevice):
                 disconnected_callback=self._disconnect_callback,
             )
         except BleakError:
-            _LOGGER.exception(f"Error establishing initial connection to '{self.name}'!")
+            _LOGGER.exception(
+                f"Error establishing initial connection to '{self.name}'!"
+            )
             return False
 
         if not self.connected:
@@ -76,7 +78,9 @@ class F2000(SolixBLEDevice):
                 partial(self._process_notification, self._client),
             )
         except BleakError:
-            _LOGGER.exception(f"Error subscribing to F2000 telemetry on '{self.name}'!")
+            _LOGGER.exception(
+                f"Error subscribing to F2000 telemetry on '{self.name}'!"
+            )
             return False
 
         self._connection_attempts = 0
@@ -121,12 +125,12 @@ class F2000(SolixBLEDevice):
             "d0": b"\x10" + b"0" * 16,
         }
 
-     def _parse_raw_telemetry(self, raw: bytes) -> dict[str, bytes]:
+    def _parse_raw_telemetry(self, raw: bytes) -> dict[str, bytes]:
         """
         Parse the observed 102-byte F2000 09FF telemetry frame using
         Reddit-derived candidate byte columns for the 767/F2000.
 
-        Candidate mapping reported by reverse engineering:
+        Candidate mapping reported publicly:
         - main battery: column 71
         - expansion battery: column 72
         - AC output: column 22
@@ -135,7 +139,7 @@ class F2000(SolixBLEDevice):
         - main temperature: column 67
         - expansion temperature: column 68
 
-        Columns above are 1-based, so convert to Python 0-based indexes.
+        These columns are treated as 1-based indexes.
         """
         params = self._default_parameters()
 
@@ -145,10 +149,14 @@ class F2000(SolixBLEDevice):
         b = list(raw)
 
         def set_u16(key: str, value: int) -> None:
-            params[key] = b"\x01" + int(value).to_bytes(2, byteorder="little", signed=False)
+            params[key] = b"\x01" + int(value).to_bytes(
+                2, byteorder="little", signed=False
+            )
 
         def set_s16(key: str, value: int) -> None:
-            params[key] = b"\x01" + int(value).to_bytes(2, byteorder="little", signed=True)
+            params[key] = b"\x01" + int(value).to_bytes(
+                2, byteorder="little", signed=True
+            )
 
         def one_based(idx: int) -> int:
             return b[idx - 1]
@@ -159,7 +167,6 @@ class F2000(SolixBLEDevice):
         def combine_256(msb_col: int, lsb_col: int) -> int:
             return (one_based(msb_col) << 8) | one_based(lsb_col)
 
-        # Battery percentages
         main_battery = one_based(71)
         expansion_battery = one_based(72)
 
@@ -169,30 +176,24 @@ class F2000(SolixBLEDevice):
         if 0 <= expansion_battery <= 100:
             set_u16("c2", expansion_battery)
 
-        # Power values
         ac_output = one_based(22)
-        ac_input_255 = combine_255(20, 21)
-        ac_input_256 = combine_256(20, 21)
-        dc_input_255 = combine_255(38, 39)
-        dc_input_256 = combine_256(38, 39)
-
-        # Prefer the more plausible interpretation for live Home Assistant values.
-        # If the 16-bit version is absurdly large, fall back to the single-byte / 255-style value.
         if 0 <= ac_output <= 5000:
             set_u16("b0", ac_output)
             set_u16("a6", ac_output)
 
+        ac_input_255 = combine_255(20, 21)
+        ac_input_256 = combine_256(20, 21)
         ac_input = ac_input_256 if 0 <= ac_input_256 <= 5000 else ac_input_255
-        dc_input = dc_input_256 if 0 <= dc_input_256 <= 5000 else dc_input_255
-
         if 0 <= ac_input <= 5000:
             set_u16("af", ac_input)
             set_u16("a5", ac_input)
 
+        dc_input_255 = combine_255(38, 39)
+        dc_input_256 = combine_256(38, 39)
+        dc_input = dc_input_256 if 0 <= dc_input_256 <= 5000 else dc_input_255
         if 0 <= dc_input <= 5000:
             set_u16("ae", dc_input)
 
-        # Temperatures
         main_temp = one_based(67)
         expansion_temp = one_based(68)
 
@@ -204,16 +205,11 @@ class F2000(SolixBLEDevice):
         set_s16("bd", main_temp)
         set_s16("be", expansion_temp)
 
-        # Time remaining is still unknown; leave a4 unchanged for now.
-        # That avoids fake timestamp churn from a guessed field.
-
-        # Best-effort serial extraction from trailing ASCII bytes.
         tail = raw[-16:]
         if all(32 <= x < 127 for x in tail):
             params["d0"] = b"\x10" + tail
 
         return params
-
 
     async def _process_notification(
         self, client: BleakClient, handle: int, data: bytearray
@@ -248,18 +244,21 @@ class F2000(SolixBLEDevice):
 
     @property
     def hours_remaining(self) -> float:
+        """Time remaining to full/empty in hours modulo 24."""
         if self._data is None:
             return DEFAULT_METADATA_FLOAT
         return round(divmod(self.time_remaining, 24)[1], 1)
 
     @property
     def days_remaining(self) -> int:
+        """Time remaining to full/empty in days."""
         if self._data is None:
             return DEFAULT_METADATA_INT
         return round(divmod(self.time_remaining, 24)[0])
 
     @property
     def time_remaining(self) -> float:
+        """Time remaining to full/empty in hours."""
         return (
             self._parse_int("a4", begin=1) / 10.0
             if self._data is not None
@@ -268,104 +267,128 @@ class F2000(SolixBLEDevice):
 
     @property
     def timestamp_remaining(self) -> datetime | None:
+        """Timestamp of when device will be full/empty."""
         if self._data is None:
             return None
         return datetime.now() + timedelta(hours=self.time_remaining)
 
     @property
     def ac_to_battery(self) -> int:
+        """AC Power going to the battery."""
         return self._parse_int("a5", begin=1)
 
     @property
     def ac_power_out_sockets(self) -> int:
+        """AC Power Out to sockets."""
         return self._parse_int("a6", begin=1)
 
     @property
     def usb_c1_power(self) -> int:
+        """USB C1 Power."""
         return self._parse_int("a7", begin=1)
 
     @property
     def usb_c2_power(self) -> int:
+        """USB C2 Power."""
         return self._parse_int("a8", begin=1)
 
     @property
     def usb_c3_power(self) -> int:
+        """USB C3 Power."""
         return self._parse_int("a9", begin=1)
 
     @property
     def usb_a1_power(self) -> int:
+        """USB A1 Power."""
         return self._parse_int("aa", begin=1)
 
     @property
     def usb_a2_power(self) -> int:
+        """USB A2 Power."""
         return self._parse_int("ab", begin=1)
 
     @property
     def dc_1_power_out(self) -> int:
+        """DC Power out for port 1."""
         return self._parse_int("ac", begin=1)
 
     @property
     def dc_2_power_out(self) -> int:
+        """DC Power out for port 2."""
         return self._parse_int("ad", begin=1)
 
     @property
     def solar_power_in(self) -> int:
+        """Solar Power In."""
         return self._parse_int("ae", begin=1)
 
     @property
     def ac_power_in(self) -> int:
+        """AC Power In."""
         return self._parse_int("af", begin=1)
 
     @property
     def ac_power_out(self) -> int:
+        """AC Power Out."""
         return self._parse_int("b0", begin=1)
 
     @property
     def software_version(self) -> str:
+        """Main software version."""
         if self._data is None:
             return DEFAULT_METADATA_STRING
         return ".".join([digit for digit in str(self._parse_int("b3", begin=1))])
 
     @property
     def software_version_expansion(self) -> str:
+        """Software version of any expansion batteries."""
         if self._data is None:
             return DEFAULT_METADATA_STRING
         return ".".join([digit for digit in str(self._parse_int("b9", begin=1))])
 
     @property
     def software_version_controller(self) -> str:
+        """Software version of the controller."""
         if self._data is None:
             return DEFAULT_METADATA_STRING
         return ".".join([digit for digit in str(self._parse_int("ba", begin=1))])
 
     @property
     def temperature(self) -> int:
+        """Temperature of the unit in C."""
         return self._parse_int("bd", begin=1, signed=True)
 
     @property
     def temperature_expansion(self) -> int:
+        """Temperature of the expansion battery in C."""
         return self._parse_int("be", begin=1, signed=True)
 
     @property
     def battery_percentage(self) -> int:
+        """Battery percentage."""
         return self._parse_int("c1", begin=1)
 
     @property
     def battery_percentage_expansion(self) -> int:
+        """Expansion battery percentage."""
         return self._parse_int("c2", begin=1)
 
     @property
     def battery_health(self) -> int:
+        """Battery health percentage."""
         return self._parse_int("c3", begin=1)
 
     @property
     def battery_health_expansion(self) -> int:
+        """Expansion battery health percentage."""
         return self._parse_int("c4", begin=1)
 
     @property
     def num_expansion(self) -> int:
+        """Number of expansion batteries."""
         return self._parse_int("c5", begin=1)
 
     @property
     def serial_number(self) -> str:
+        """Device serial number."""
         return self._parse_string("d0", begin=1)
