@@ -1,13 +1,11 @@
 import asyncio
 import logging
 import time
+from datetime import datetime, timedelta
 from functools import partial
-_LOGGER = logging.getLogger(__name__)
+
 from bleak import BleakClient, BleakError
 from bleak_retry_connector import establish_connection
-
-
-from datetime import datetime, timedelta
 
 from ..const import (
     DEFAULT_METADATA_FLOAT,
@@ -17,6 +15,8 @@ from ..const import (
 )
 from ..device import SolixBLEDevice
 
+_LOGGER = logging.getLogger(__name__)
+
 
 class F2000(SolixBLEDevice):
     """
@@ -24,18 +24,6 @@ class F2000(SolixBLEDevice):
 
     Use this class to connect and monitor a F2000(P) power station.
     This model is also known as the A1780 or the 767 PowerHouse.
-
-    .. note::
-        This model was added using data from anker-solix-api. It has not been
-        tested!
-
-    .. note::
-        It should be possible to add more sensors. I think devices with lots of
-        telemetry values split them up into multiple messages but I have not
-        played around with this yet. That and I am being a bit conservative with
-        these initial implementations, if you want more sensors and are willing
-        to help with testing feel free to raise a GitHub issue.
-
     """
 
     _EXPECTED_TELEMETRY_LENGTH: int = 102
@@ -106,7 +94,7 @@ class F2000(SolixBLEDevice):
 
     def _default_parameters(self) -> dict[str, bytes]:
         """Populate keys expected by the existing F2000 properties."""
-        params = {
+        return {
             "a4": b"\x01\x00",
             "a5": b"\x01\x00",
             "a6": b"\x01\x00",
@@ -132,14 +120,12 @@ class F2000(SolixBLEDevice):
             "c5": b"\x01\x00",
             "d0": b"\x10" + b"0" * 16,
         }
-        return params
 
-     def _parse_raw_telemetry(self, raw: bytes) -> dict[str, bytes]:
+    def _parse_raw_telemetry(self, raw: bytes) -> dict[str, bytes]:
         """
         Conservative raw F2000 parser for the observed 102-byte 09FF frame.
 
-        Only maps fields with the strongest current evidence. Everything else
-        stays at safe defaults until more captures confirm offsets.
+        Only maps fields with the strongest current evidence.
         """
         params = self._default_parameters()
 
@@ -153,18 +139,10 @@ class F2000(SolixBLEDevice):
         def set_u16(key: str, value: int) -> None:
             params[key] = b"\x01" + int(value).to_bytes(2, byteorder="little", signed=False)
 
-        # Word layout from screenshots strongly suggests:
-        # word 11 -> battery percentage (e.g. 0x0035 = 53? / 0x0025 = 37?),
-        # but your second capture aligns best with 0x0025 -> 26% only if the
-        # app view and BLE frame were near-simultaneous. This is our best
-        # current candidate, but still provisional.
         battery_pct = be16(11)
-
-        # Clamp obviously-invalid battery values.
         if 0 <= battery_pct <= 100:
             set_u16("c1", battery_pct)
 
-        # Best-effort serial extraction from trailing ASCII-ish bytes.
         tail = raw[-16:]
         if all(32 <= b < 127 for b in tail):
             params["d0"] = b"\x10" + tail
@@ -204,40 +182,18 @@ class F2000(SolixBLEDevice):
 
     @property
     def hours_remaining(self) -> float:
-        """Time remaining to full/empty.
-
-        Note that any hours over 24 are overflowed to the
-        days remaining. Use time_remaining if you want
-        days to be included.
-
-        :returns: Hours remaining or default float value.
-        """
         if self._data is None:
             return DEFAULT_METADATA_FLOAT
-
         return round(divmod(self.time_remaining, 24)[1], 1)
 
     @property
     def days_remaining(self) -> int:
-        """Time remaining to full/empty.
-
-        Note that any partial days are overflowed into
-        the hours remaining. Use time_remaining if you want
-        hours to be included.
-
-        :returns: Days remaining or default int value.
-        """
         if self._data is None:
             return DEFAULT_METADATA_INT
-
         return round(divmod(self.time_remaining, 24)[0])
 
     @property
     def time_remaining(self) -> float:
-        """Time remaining to full/empty in hours.
-
-        :returns: Hours remaining or default float value.
-        """
         return (
             self._parse_int("a4", begin=1) / 10.0
             if self._data is not None
@@ -246,205 +202,104 @@ class F2000(SolixBLEDevice):
 
     @property
     def timestamp_remaining(self) -> datetime | None:
-        """Timestamp of when device will be full/empty.
-
-        :returns: Timestamp of when will be full/empty or None.
-        """
         if self._data is None:
             return None
         return datetime.now() + timedelta(hours=self.time_remaining)
 
     @property
     def ac_to_battery(self) -> int:
-        """AC Power that is going to the battery.
-
-        :returns: Total AC power to battery or default int value.
-        """
         return self._parse_int("a5", begin=1)
 
     @property
     def ac_power_out_sockets(self) -> int:
-        """AC Power Out to sockets.
-
-        :returns: AC power out or default int value.
-        """
         return self._parse_int("a6", begin=1)
 
     @property
     def usb_c1_power(self) -> int:
-        """USB C1 Power.
-
-        :returns: USB port C1 power or default int value.
-        """
         return self._parse_int("a7", begin=1)
 
     @property
     def usb_c2_power(self) -> int:
-        """USB C2 Power.
-
-        :returns: USB port C2 power or default int value.
-        """
         return self._parse_int("a8", begin=1)
 
     @property
     def usb_c3_power(self) -> int:
-        """USB C3 Power.
-
-        :returns: USB port C3 power or default int value.
-        """
         return self._parse_int("a9", begin=1)
 
     @property
     def usb_a1_power(self) -> int:
-        """USB A1 Power.
-
-        :returns: USB port A1 power or default int value.
-        """
         return self._parse_int("aa", begin=1)
 
     @property
     def usb_a2_power(self) -> int:
-        """USB A2 Power.
-
-        :returns: USB port A2 power or default int value.
-        """
         return self._parse_int("ab", begin=1)
 
     @property
     def dc_1_power_out(self) -> int:
-        """DC Power out for port 1.
-
-        :returns: DC power out for port 1 or default int value.
-        """
         return self._parse_int("ac", begin=1)
 
     @property
     def dc_2_power_out(self) -> int:
-        """DC Power out for port 2.
-
-        :returns: DC power out for port 2 or default int value.
-        """
         return self._parse_int("ad", begin=1)
 
     @property
     def solar_power_in(self) -> int:
-        """Solar Power In.
-
-        :returns: Total solar power in or default int value.
-        """
         return self._parse_int("ae", begin=1)
 
     @property
     def ac_power_in(self) -> int:
-        """AC Power In.
-
-        :returns: Total AC power in or default int value.
-        """
         return self._parse_int("af", begin=1)
 
     @property
     def ac_power_out(self) -> int:
-        """AC Power Out.
-
-        :returns: Total AC power out or default int value.
-        """
         return self._parse_int("b0", begin=1)
 
     @property
     def software_version(self) -> str:
-        """Main software version.
-
-        :returns: Firmware version or default str value.
-        """
         if self._data is None:
             return DEFAULT_METADATA_STRING
-
         return ".".join([digit for digit in str(self._parse_int("b3", begin=1))])
 
     @property
     def software_version_expansion(self) -> str:
-        """Software version of any expansion batteries.
-
-        If there is no expansion battery then it will be "0".
-
-        :returns: Firmware version or default str value.
-        """
         if self._data is None:
             return DEFAULT_METADATA_STRING
-
         return ".".join([digit for digit in str(self._parse_int("b9", begin=1))])
 
     @property
     def software_version_controller(self) -> str:
-        """Software version of the controller.
-
-        :returns: Firmware version or default str value.
-        """
         if self._data is None:
             return DEFAULT_METADATA_STRING
-
         return ".".join([digit for digit in str(self._parse_int("ba", begin=1))])
 
     @property
     def temperature(self) -> int:
-        """Temperature of the unit (C).
-
-        :returns: Temperature of the unit in degrees C.
-        """
         return self._parse_int("bd", begin=1, signed=True)
 
     @property
     def temperature_expansion(self) -> int:
-        """Temperature of the expansion battery if present (C).
-
-        :returns: Temperature of expansion battery in degrees C or 0 if not present or default int value.
-        """
         return self._parse_int("be", begin=1, signed=True)
 
     @property
     def battery_percentage(self) -> int:
-        """Battery Percentage.
-
-        :returns: Percentage charge of battery or default int value.
-        """
         return self._parse_int("c1", begin=1)
 
     @property
     def battery_percentage_expansion(self) -> int:
-        """Battery Percentage of the expansion battery.
-
-        :returns: Percentage charge of expansion battery or 0 if not present or default int value.
-        """
         return self._parse_int("c2", begin=1)
 
     @property
     def battery_health(self) -> int:
-        """Battery health as a percentage.
-
-        :returns: Percentage of battery health or default int value.
-        """
         return self._parse_int("c3", begin=1)
 
     @property
     def battery_health_expansion(self) -> int:
-        """Battery health as a percentage for expansion battery.
-
-        :returns: Percentage of expansion battery health or 0 if not present or default int value.
-        """
         return self._parse_int("c4", begin=1)
 
     @property
     def num_expansion(self) -> int:
-        """Number of expansion batteries.
-
-        :returns: Number of expansion batteries or default int value.
-        """
         return self._parse_int("c5", begin=1)
 
     @property
     def serial_number(self) -> str:
-        """Device serial number.
-
-        :returns: Device serial number or default str value.
-        """
         return self._parse_string("d0", begin=1)
