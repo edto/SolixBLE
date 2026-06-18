@@ -200,7 +200,11 @@ class F2000(SolixBLEDevice):
         # DC / solar input
         dc_input_255 = combine_255(38, 39)
         dc_input_256 = combine_256(38, 39)
-        dc_input = dc_input_256 if 0 <= dc_input_256 <= 5000 else dc_input_255
+        # Reddit-derived mapping indicates DC input uses the 255-style formula.
+        dc_input = dc_input_255
+        if not (0 <= dc_input <= 5000):
+            dc_input = dc_input_256
+
         if 0 <= dc_input <= 5000:
             set_u16("ae", dc_input)
 
