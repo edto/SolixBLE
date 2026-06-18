@@ -121,33 +121,99 @@ class F2000(SolixBLEDevice):
             "d0": b"\x10" + b"0" * 16,
         }
 
-    def _parse_raw_telemetry(self, raw: bytes) -> dict[str, bytes]:
+     def _parse_raw_telemetry(self, raw: bytes) -> dict[str, bytes]:
         """
-        Conservative raw F2000 parser for the observed 102-byte 09FF frame.
+        Parse the observed 102-byte F2000 09FF telemetry frame using
+        Reddit-derived candidate byte columns for the 767/F2000.
 
-        Only maps fields with the strongest current evidence.
+        Candidate mapping reported by reverse engineering:
+        - main battery: column 71
+        - expansion battery: column 72
+        - AC output: column 22
+        - AC input: columns 20 and 21
+        - DC input: columns 38 and 39
+        - main temperature: column 67
+        - expansion temperature: column 68
+
+        Columns above are 1-based, so convert to Python 0-based indexes.
         """
         params = self._default_parameters()
 
         if len(raw) != self._EXPECTED_TELEMETRY_LENGTH:
             return params
 
-        def be16(word_index: int) -> int:
-            offset = word_index * 2
-            return int.from_bytes(raw[offset:offset + 2], byteorder="big", signed=False)
+        b = list(raw)
 
         def set_u16(key: str, value: int) -> None:
             params[key] = b"\x01" + int(value).to_bytes(2, byteorder="little", signed=False)
 
-        battery_pct = be16(11)
-        if 0 <= battery_pct <= 100:
-            set_u16("c1", battery_pct)
+        def set_s16(key: str, value: int) -> None:
+            params[key] = b"\x01" + int(value).to_bytes(2, byteorder="little", signed=True)
 
+        def one_based(idx: int) -> int:
+            return b[idx - 1]
+
+        def combine_255(msb_col: int, lsb_col: int) -> int:
+            return (one_based(msb_col) * 255) + one_based(lsb_col)
+
+        def combine_256(msb_col: int, lsb_col: int) -> int:
+            return (one_based(msb_col) << 8) | one_based(lsb_col)
+
+        # Battery percentages
+        main_battery = one_based(71)
+        expansion_battery = one_based(72)
+
+        if 0 <= main_battery <= 100:
+            set_u16("c1", main_battery)
+
+        if 0 <= expansion_battery <= 100:
+            set_u16("c2", expansion_battery)
+
+        # Power values
+        ac_output = one_based(22)
+        ac_input_255 = combine_255(20, 21)
+        ac_input_256 = combine_256(20, 21)
+        dc_input_255 = combine_255(38, 39)
+        dc_input_256 = combine_256(38, 39)
+
+        # Prefer the more plausible interpretation for live Home Assistant values.
+        # If the 16-bit version is absurdly large, fall back to the single-byte / 255-style value.
+        if 0 <= ac_output <= 5000:
+            set_u16("b0", ac_output)
+            set_u16("a6", ac_output)
+
+        ac_input = ac_input_256 if 0 <= ac_input_256 <= 5000 else ac_input_255
+        dc_input = dc_input_256 if 0 <= dc_input_256 <= 5000 else dc_input_255
+
+        if 0 <= ac_input <= 5000:
+            set_u16("af", ac_input)
+            set_u16("a5", ac_input)
+
+        if 0 <= dc_input <= 5000:
+            set_u16("ae", dc_input)
+
+        # Temperatures
+        main_temp = one_based(67)
+        expansion_temp = one_based(68)
+
+        if main_temp >= 128:
+            main_temp -= 256
+        if expansion_temp >= 128:
+            expansion_temp -= 256
+
+        set_s16("bd", main_temp)
+        set_s16("be", expansion_temp)
+
+        # Time remaining is still unknown; leave a4 unchanged for now.
+        # That avoids fake timestamp churn from a guessed field.
+
+        # Best-effort serial extraction from trailing ASCII bytes.
         tail = raw[-16:]
-        if all(32 <= b < 127 for b in tail):
+        if all(32 <= x < 127 for x in tail):
             params["d0"] = b"\x10" + tail
 
         return params
+
 
     async def _process_notification(
         self, client: BleakClient, handle: int, data: bytearray
