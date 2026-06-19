@@ -129,17 +129,19 @@ class F2000(SolixBLEDevice):
         """
         Parse the observed 102-byte F2000 09FF telemetry frame.
 
-        Confirmed / useful mappings currently used:
+        Confirmed working mappings from live validation:
         - time remaining (hours * 10): raw byte index 17
         - main battery: column 71
-        - expansion battery: column 72
         - AC output: column 22
+        - main temperature: column 67
+
+        Provisional mappings:
+        - expansion battery: column 72
         - AC input: columns 20 and 21
         - DC / solar input: columns 38 and 39
-        - main temperature: column 67
         - expansion temperature: column 68
 
-        The column-style mappings are treated as 1-based indexes.
+        Column-style mappings are treated as 1-based indexes.
         """
         params = self._default_parameters()
 
@@ -167,40 +169,39 @@ class F2000(SolixBLEDevice):
         def combine_256(msb_col: int, lsb_col: int) -> int:
             return (one_based(msb_col) << 8) | one_based(lsb_col)
 
-        # Remaining time: HA community example reports x[17] / 10.0 hours.
+        # Confirmed remaining time mapping from observed community example:
+        # x[17] / 10.0 hours
         if len(b) > 17:
             remaining_tenths = b[17]
             if 0 <= remaining_tenths <= 255:
                 set_u16("a4", remaining_tenths)
 
-        # Battery percentages
+        # Confirmed main battery mapping
         main_battery = one_based(71)
-        expansion_battery = one_based(72)
-
         if 0 <= main_battery <= 100:
             set_u16("c1", main_battery)
 
+        # Provisional expansion battery mapping
+        expansion_battery = one_based(72)
         if 0 <= expansion_battery <= 100:
             set_u16("c2", expansion_battery)
 
-        # AC output
+        # Confirmed AC output mapping
         ac_output = one_based(22)
         if 0 <= ac_output <= 5000:
             set_u16("b0", ac_output)
             set_u16("a6", ac_output)
 
-        # AC input
+        # Provisional AC input mapping; only expose main AC input field for now
         ac_input_255 = combine_255(20, 21)
         ac_input_256 = combine_256(20, 21)
         ac_input = ac_input_256 if 0 <= ac_input_256 <= 5000 else ac_input_255
         if 0 <= ac_input <= 5000:
             set_u16("af", ac_input)
-            set_u16("a5", ac_input)
 
-        # DC / solar input
-        dc_input_255 = combine_255(38, 39)
-        dc_input_256 = combine_256(38, 39)
-        # Reddit-derived mapping indicates DC input uses the 255-style formula.
+        # Provisional DC / solar input mapping
+        dc_input_255 = combine_255(39, 38)
+        dc_input_256 = combine_256(39, 38)
         dc_input = dc_input_255
         if not (0 <= dc_input <= 5000):
             dc_input = dc_input_256
@@ -208,22 +209,20 @@ class F2000(SolixBLEDevice):
         if 0 <= dc_input <= 5000:
             set_u16("ae", dc_input)
 
-        # Temperatures
+        # Confirmed main temperature mapping
         main_temp = one_based(67)
-        expansion_temp = one_based(68)
-
         if main_temp >= 128:
             main_temp -= 256
+        set_s16("bd", main_temp)
+
+        # Provisional expansion temperature mapping
+        expansion_temp = one_based(68)
         if expansion_temp >= 128:
             expansion_temp -= 256
-
-        set_s16("bd", main_temp)
         set_s16("be", expansion_temp)
 
-        # Best-effort serial extraction from trailing ASCII bytes
-        tail = raw[-16:]
-        if all(32 <= x < 127 for x in tail):
-            params["d0"] = b"\x10" + tail
+        # Serial number from raw telemetry is not stable yet; leave default placeholder
+        # until a dedicated fixed mapping is confirmed.
 
         return params
 
