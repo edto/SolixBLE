@@ -122,26 +122,23 @@ class F2000(SolixBLEDevice):
             "c3": b"\x01\x00",
             "c4": b"\x01\x00",
             "c5": b"\x01\x00",
-            "d0": b"\x10" + b"0" * 16,
+            "d0": b"\x10",
         }
 
     def _parse_raw_telemetry(self, raw: bytes) -> dict[str, bytes]:
         """
         Parse the observed 102-byte F2000 09FF telemetry frame.
 
-        Confirmed working mappings from live validation:
-        - time remaining (hours * 10): raw byte index 17
-        - main battery: column 71
-        - AC output: column 22
-        - main temperature: column 67
-
-        Provisional mappings:
-        - expansion battery: column 72
-        - AC input: columns 20 and 21
-        - DC / solar input: columns 38 and 39
-        - expansion temperature: column 68
-
-        Column-style mappings are treated as 1-based indexes.
+        Mapping basis:
+        - x[17] / 10.0 = remaining hours
+        - x[18] = remaining days
+        - (x[19] << 8) | x[20] = mains / AC charging
+        - (x[21] << 8) | x[22] = AC output
+        - (x[37] << 8) | x[38] = 12V / DC charging
+        - (x[39] << 8) | x[40] = total charging
+        - (x[41] << 8) | x[42] = total output
+        - x[66] = battery temperature
+        - x[70] = battery level
         """
         params = self._default_parameters()
 
@@ -160,69 +157,58 @@ class F2000(SolixBLEDevice):
                 2, byteorder="little", signed=True
             )
 
-        def one_based(idx: int) -> int:
-            return b[idx - 1]
+        def u16_be(idx: int) -> int:
+            if idx < 0 or idx + 1 >= len(b):
+                return 0
+            return (b[idx] << 8) | b[idx + 1]
 
-        def combine_255(msb_col: int, lsb_col: int) -> int:
-            return (one_based(msb_col) * 255) + one_based(lsb_col)
+        # Remaining time: total tenths of hours
+        remaining_hours_tenths = b[17] if len(b) > 17 else 0
+        remaining_days = b[18] if len(b) > 18 else 0
+        total_remaining_tenths = (remaining_days * 24 * 10) + remaining_hours_tenths
+        if 0 <= total_remaining_tenths <= 24 * 100 * 10:
+            set_u16("a4", total_remaining_tenths)
 
-        def combine_256(msb_col: int, lsb_col: int) -> int:
-            return (one_based(msb_col) << 8) | one_based(lsb_col)
-
-        # Confirmed remaining time mapping from observed community example:
-        # x[17] / 10.0 hours
-        if len(b) > 17:
-            remaining_tenths = b[17]
-            if 0 <= remaining_tenths <= 255:
-                set_u16("a4", remaining_tenths)
-
-        # Confirmed main battery mapping
-        main_battery = one_based(71)
-        if 0 <= main_battery <= 100:
-            set_u16("c1", main_battery)
-
-        # Provisional expansion battery mapping
-        expansion_battery = one_based(72)
-        if 0 <= expansion_battery <= 100:
-            set_u16("c2", expansion_battery)
-
-        # Confirmed AC output mapping
-        ac_output = one_based(22)
-        if 0 <= ac_output <= 5000:
-            set_u16("b0", ac_output)
-            set_u16("a6", ac_output)
-
-        # Provisional AC input mapping; only expose main AC input field for now
-        ac_input_255 = combine_255(20, 21)
-        ac_input_256 = combine_256(20, 21)
-        ac_input = ac_input_256 if 0 <= ac_input_256 <= 5000 else ac_input_255
+        # Charging / input
+        ac_input = u16_be(19)
         if 0 <= ac_input <= 5000:
             set_u16("af", ac_input)
 
-        # Provisional DC / solar input mapping
-        dc_input_255 = combine_255(39, 38)
-        dc_input_256 = combine_256(39, 38)
-        dc_input = dc_input_255
-        if not (0 <= dc_input <= 5000):
-            dc_input = dc_input_256
-
+        dc_input = u16_be(37)
         if 0 <= dc_input <= 5000:
             set_u16("ae", dc_input)
 
-        # Confirmed main temperature mapping
-        main_temp = one_based(67)
+        total_charging = u16_be(39)
+        if 0 <= total_charging <= 5000:
+            set_u16("a5", total_charging)
+
+        # Output
+        ac_output_sockets = u16_be(21)
+        if 0 <= ac_output_sockets <= 5000:
+            set_u16("a6", ac_output_sockets)
+
+        total_output = u16_be(41)
+        if 0 <= total_output <= 5000:
+            set_u16("b0", total_output)
+
+        # Temperature
+        main_temp = b[66] if len(b) > 66 else 0
         if main_temp >= 128:
             main_temp -= 256
         set_s16("bd", main_temp)
 
-        # Provisional expansion temperature mapping
-        expansion_temp = one_based(68)
-        if expansion_temp >= 128:
-            expansion_temp -= 256
-        set_s16("be", expansion_temp)
+        # Expansion temperature remains unconfirmed; leave unset unless later mapped
 
-        # Serial number from raw telemetry is not stable yet; leave default placeholder
-        # until a dedicated fixed mapping is confirmed.
+        # Battery
+        main_battery = b[70] if len(b) > 70 else 0
+        if 0 <= main_battery <= 100:
+            set_u16("c1", main_battery)
+
+        expansion_battery = b[71] if len(b) > 71 else 0
+        if 0 <= expansion_battery <= 100:
+            set_u16("c2", expansion_battery)
+
+        # Serial number remains unconfirmed for this frame format
 
         return params
 
@@ -289,12 +275,12 @@ class F2000(SolixBLEDevice):
 
     @property
     def ac_to_battery(self) -> int:
-        """AC Power going to the battery."""
+        """Charging power going to the battery."""
         return self._parse_int("a5", begin=1)
 
     @property
     def ac_power_out_sockets(self) -> int:
-        """AC Power Out to sockets."""
+        """AC socket power out."""
         return self._parse_int("a6", begin=1)
 
     @property
@@ -334,17 +320,17 @@ class F2000(SolixBLEDevice):
 
     @property
     def solar_power_in(self) -> int:
-        """Solar Power In."""
+        """Solar / DC power in."""
         return self._parse_int("ae", begin=1)
 
     @property
     def ac_power_in(self) -> int:
-        """AC Power In."""
+        """AC power in."""
         return self._parse_int("af", begin=1)
 
     @property
     def ac_power_out(self) -> int:
-        """AC Power Out."""
+        """Total output power."""
         return self._parse_int("b0", begin=1)
 
     @property
@@ -406,4 +392,9 @@ class F2000(SolixBLEDevice):
     @property
     def serial_number(self) -> str:
         """Device serial number."""
-        return self._parse_string("d0", begin=1)
+        if self._data is None:
+            return DEFAULT_METADATA_STRING
+        value = self._parse_string("d0", begin=1)
+        if not value or value == "0" or set(value) == {"0"}:
+            return DEFAULT_METADATA_STRING
+        return value
