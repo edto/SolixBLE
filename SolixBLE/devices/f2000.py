@@ -44,7 +44,6 @@ class F2000(SolixBLEDevice):
                 await self._dispose_of_client()
 
             self._reset_session(reset_data=False)
-
             self._client = await establish_connection(
                 BleakClient,
                 device=self._ble_device,
@@ -55,18 +54,22 @@ class F2000(SolixBLEDevice):
             )
         except BleakError:
             _LOGGER.exception(
-                f"Error establishing initial connection to '{self.name}'!"
+                "Error establishing initial connection to '%s'!", self.name
             )
             return False
 
         if not self.connected:
             _LOGGER.error(
-                f"Failed to establish initial connection to '{self.name}' on attempt {self._connection_attempts}!"
+                "Failed to establish initial connection to '%s' on attempt %s!",
+                self.name,
+                self._connection_attempts,
             )
             return False
 
         _LOGGER.debug(
-            f"Established initial F2000 connection to '{self.name}' on attempt {self._connection_attempts}!"
+            "Established initial F2000 connection to '%s' on attempt %s!",
+            self.name,
+            self._connection_attempts,
         )
 
         try:
@@ -76,7 +79,7 @@ class F2000(SolixBLEDevice):
             )
         except BleakError:
             _LOGGER.exception(
-                f"Error subscribing to F2000 telemetry on '{self.name}'!"
+                "Error subscribing to F2000 telemetry on '%s'!", self.name
             )
             return False
 
@@ -108,8 +111,6 @@ class F2000(SolixBLEDevice):
             "ae": b"\x01\x00",
             "af": b"\x01\x00",
             "b0": b"\x01\x00",
-            "b1": b"\x01\x00",
-            "b2": b"\x01\x00",
             "b3": b"\x01\x00",
             "b9": b"\x01\x00",
             "ba": b"\x01\x00",
@@ -129,72 +130,71 @@ class F2000(SolixBLEDevice):
         if len(raw) != self._EXPECTED_TELEMETRY_LENGTH:
             return params
 
-        b = list(raw)
         words = [
-            int.from_bytes(raw[i:i + 2], byteorder="big", signed=False)
+            int.from_bytes(raw[i : i + 2], byteorder="big", signed=False)
             for i in range(0, len(raw), 2)
         ]
 
         def set_u16(key: str, value: int) -> None:
-            params[key] = b"\x01" + int(value).to_bytes(
-                2, byteorder="little", signed=False
-            )
+            params[key] = b"\x01" + int(value).to_bytes(2, byteorder="little", signed=False)
 
         def set_s16(key: str, value: int) -> None:
-            params[key] = b"\x01" + int(value).to_bytes(
-                2, byteorder="little", signed=True
-            )
+            params[key] = b"\x01" + int(value).to_bytes(2, byteorder="little", signed=True)
 
-        if len(words) > 8:
-            remaining_tenths = words[8]
+        def swap_u16(word: int) -> int:
+            return ((word & 0x00FF) << 8) | ((word & 0xFF00) >> 8)
+
+        def cross_u16(lo_word: int, hi_word: int) -> int:
+            return (lo_word & 0x00FF) | (hi_word & 0xFF00)
+
+        if len(words) > 9:
+            remaining_tenths = cross_u16(words[8], words[9])
             if 0 <= remaining_tenths <= 10000:
                 set_u16("a4", remaining_tenths)
 
-        if len(words) > 18:
-            total_input = words[18]
-            if 0 <= total_input <= 5000:
-                set_u16("af", total_input)
-                set_u16("a5", total_input)
+        # Confirmed AC output field from the dedicated AC-load captures.
+        ac_candidates: list[int] = []
+        if len(words) > 11:
+            ac_candidates.append(cross_u16(words[10], words[11]))
+        if len(words) > 22:
+            ac_candidates.append(cross_u16(words[21], words[22]))
+        ac_candidates = [value for value in ac_candidates if 0 <= value <= 5000]
+        ac_output = max(ac_candidates) if ac_candidates else 0
+        set_u16("a6", ac_output)
 
+        # Confirmed DC output field remains the working direct DC-load value.
+        dc_candidates: list[int] = []
+        for idx in (16, 18, 20):
+            if len(words) > idx and 0 <= words[idx] <= 5000:
+                dc_candidates.append(words[idx])
+        dc_output = max(dc_candidates) if dc_candidates else 0
+        set_u16("ac", dc_output)
+
+        # Keep the previously working total-output parsing method.
         if len(words) > 21:
-            total_output = (words[21] & 0xFF00) | (words[20] & 0x00FF)
+            total_output = cross_u16(words[20], words[21])
             if 0 <= total_output <= 5000:
                 set_u16("b0", total_output)
-                set_u16("a6", total_output)
 
-        if len(words) > 16:
-            dc_output_candidate = words[16]
-            if 0 <= dc_output_candidate <= 5000:
-                set_u16("ac", dc_output_candidate)
-
-        if len(words) > 30:
-            ac_enabled = 1 if words[30] == 0x0001 else 0
-            set_u16("b1", ac_enabled)
-
-        if len(words) > 32:
-            dc_state_bucket = words[32]
-            if dc_state_bucket in (0x2000, 0x2200):
-                set_u16("b2", 1 if dc_state_bucket == 0x2200 else 0)
-            else:
-                set_u16("b2", 0)
-
-        main_temp = b[66] if len(b) > 66 else 0
+        main_temp = 0
+        if len(words) > 35:
+            main_temp = (words[35] & 0xFF00) >> 8
         if main_temp >= 128:
             main_temp -= 256
         set_s16("bd", main_temp)
 
-        if len(words) > 35:
-            main_battery = (words[35] >> 8) | ((words[35] & 0x00FF) << 8)
-            if 0 <= main_battery <= 100:
-                set_u16("c1", main_battery)
-
         if len(words) > 36:
-            battery_health = (words[36] >> 8) | ((words[36] & 0x00FF) << 8)
+            battery_pct = swap_u16(words[36])
+            if 0 <= battery_pct <= 100:
+                set_u16("c1", battery_pct)
+
+        if len(words) > 37:
+            battery_health = swap_u16(words[37])
             if 0 <= battery_health <= 100:
                 set_u16("c3", battery_health)
 
         serial_bytes = raw[-17:-1]
-        if len(serial_bytes) == 16 and all(32 <= x < 127 for x in serial_bytes):
+        if len(serial_bytes) == 16 and all(32 <= b < 127 for b in serial_bytes):
             params["d0"] = b"\x10" + serial_bytes
 
         return params
@@ -210,7 +210,10 @@ class F2000(SolixBLEDevice):
         self._last_packet_timestamp = time.time()
 
         _LOGGER.debug(
-            f"Received raw F2000 notification from '{self.name}'. length: {len(raw)}, packet: '{raw.hex()}'"
+            "Received raw F2000 notification from '%s'. length: %s, packet: '%s'",
+            self.name,
+            len(raw),
+            raw.hex(),
         )
 
         if len(raw) < 4:
@@ -218,7 +221,7 @@ class F2000(SolixBLEDevice):
             return
 
         if raw[:2] not in (bytes.fromhex("09ff"), bytes.fromhex("ff09")):
-            _LOGGER.debug(f"Ignoring non-F2000 frame header: {raw[:2].hex()}")
+            _LOGGER.debug("Ignoring non-F2000 frame header: %s", raw[:2].hex())
             return
 
         parameters = self._parse_raw_telemetry(raw)
@@ -295,16 +298,12 @@ class F2000(SolixBLEDevice):
         return self._parse_int("af", begin=1)
 
     @property
-    def ac_power_out(self) -> int:
+    def power_out(self) -> int:
         return self._parse_int("b0", begin=1)
 
     @property
-    def ac_inverter_enabled(self) -> int:
-        return self._parse_int("b1", begin=1)
-
-    @property
-    def dc12v_enabled(self) -> int:
-        return self._parse_int("b2", begin=1)
+    def ac_power_out(self) -> int:
+        return self._parse_int("a6", begin=1)
 
     @property
     def software_version(self) -> str:
