@@ -129,16 +129,12 @@ class F2000(SolixBLEDevice):
         """
         Parse the observed 102-byte F2000 09FF telemetry frame.
 
-        Mapping basis:
-        - x[17] / 10.0 = remaining hours
-        - x[18] = remaining days
-        - (x[19] << 8) | x[20] = mains / AC charging
-        - (x[21] << 8) | x[22] = AC output
-        - (x[37] << 8) | x[38] = 12V / DC charging
-        - (x[39] << 8) | x[40] = total charging
-        - (x[41] << 8) | x[42] = total output
-        - x[66] = battery temperature
-        - x[70] = battery level
+        Current confidence:
+        - time remaining uses byte 17 tenths of hours plus byte 18 days
+        - total input matches repeated 0x0075/0x0073-style words
+        - total output matches little-endian bytes at offset 40/41
+        - temperature and battery mappings are reasonably stable
+        - serial number remains unconfirmed
         """
         params = self._default_parameters()
 
@@ -157,39 +153,46 @@ class F2000(SolixBLEDevice):
                 2, byteorder="little", signed=True
             )
 
+        def u16_le(idx: int) -> int:
+            if idx < 0 or idx + 1 >= len(b):
+                return 0
+            return b[idx] | (b[idx + 1] << 8)
+
         def u16_be(idx: int) -> int:
             if idx < 0 or idx + 1 >= len(b):
                 return 0
             return (b[idx] << 8) | b[idx + 1]
 
-        # Remaining time: total tenths of hours
+        # Remaining time:
+        # b[17] is tenths-of-hours remainder, b[18] is days.
         remaining_hours_tenths = b[17] if len(b) > 17 else 0
         remaining_days = b[18] if len(b) > 18 else 0
         total_remaining_tenths = (remaining_days * 24 * 10) + remaining_hours_tenths
-        if 0 <= total_remaining_tenths <= 24 * 100 * 10:
+        if 0 <= total_remaining_tenths <= 24 * 365 * 10:
             set_u16("a4", total_remaining_tenths)
 
-        # Charging / input
-        ac_input = u16_be(19)
-        if 0 <= ac_input <= 5000:
-            set_u16("af", ac_input)
+        # Total input:
+        # In your four captures the repeated words at byte pairs 36/37 and 38/39
+        # tracked the screen exactly as 117,117,115,115.
+        # Map total input to af (ac_power_in sensor in HA).
+        total_input = u16_be(36)
+        if 0 <= total_input <= 5000:
+            set_u16("af", total_input)
 
-        dc_input = u16_be(37)
-        if 0 <= dc_input <= 5000:
-            set_u16("ae", dc_input)
+        # Keep a5 mirrored for now as "power to battery" / charging-related total.
+        if 0 <= total_input <= 5000:
+            set_u16("a5", total_input)
 
-        total_charging = u16_be(39)
-        if 0 <= total_charging <= 5000:
-            set_u16("a5", total_charging)
-
-        # Output
-        ac_output_sockets = u16_be(21)
-        if 0 <= ac_output_sockets <= 5000:
-            set_u16("a6", ac_output_sockets)
-
-        total_output = u16_be(41)
+        # Total output:
+        # Your captures show bytes 40/41 interpreted little-endian produce
+        # exactly 260, 262, 289, 308.
+        total_output = u16_le(40)
         if 0 <= total_output <= 5000:
             set_u16("b0", total_output)
+            set_u16("a6", total_output)
+
+        # Leave DC/solar input unset for now; current mapping is not validated.
+        # Leave dedicated DC outputs unset for now; not enough evidence yet.
 
         # Temperature
         main_temp = b[66] if len(b) > 66 else 0
@@ -197,7 +200,7 @@ class F2000(SolixBLEDevice):
             main_temp -= 256
         set_s16("bd", main_temp)
 
-        # Expansion temperature remains unconfirmed; leave unset unless later mapped
+        # Expansion temperature remains unconfirmed; leave default.
 
         # Battery
         main_battery = b[70] if len(b) > 70 else 0
@@ -207,8 +210,6 @@ class F2000(SolixBLEDevice):
         expansion_battery = b[71] if len(b) > 71 else 0
         if 0 <= expansion_battery <= 100:
             set_u16("c2", expansion_battery)
-
-        # Serial number remains unconfirmed for this frame format
 
         return params
 
@@ -275,12 +276,12 @@ class F2000(SolixBLEDevice):
 
     @property
     def ac_to_battery(self) -> int:
-        """Charging power going to the battery."""
+        """Charging/input-related power to battery."""
         return self._parse_int("a5", begin=1)
 
     @property
     def ac_power_out_sockets(self) -> int:
-        """AC socket power out."""
+        """Currently mirrored from total output until socket-only mapping is known."""
         return self._parse_int("a6", begin=1)
 
     @property
@@ -325,12 +326,12 @@ class F2000(SolixBLEDevice):
 
     @property
     def ac_power_in(self) -> int:
-        """AC power in."""
+        """Mapped to total input from the screen."""
         return self._parse_int("af", begin=1)
 
     @property
     def ac_power_out(self) -> int:
-        """Total output power."""
+        """Mapped to total output from the screen."""
         return self._parse_int("b0", begin=1)
 
     @property
