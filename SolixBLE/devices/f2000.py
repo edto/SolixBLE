@@ -122,7 +122,7 @@ class F2000(SolixBLEDevice):
             "c3": b"\x01\x00",
             "c4": b"\x01\x00",
             "c5": b"\x01\x00",
-            "d0": b"\x10",
+            "d0": b"\x10" + b"0" * 16,
         }
 
     def _parse_raw_telemetry(self, raw: bytes) -> dict[str, bytes]:
@@ -130,11 +130,11 @@ class F2000(SolixBLEDevice):
         Parse the observed 102-byte F2000 09FF telemetry frame.
 
         Current confidence:
-        - time remaining uses byte 17 tenths of hours plus byte 18 days
+        - time remaining uses byte/word area around word 8
         - total input matches repeated 0x0075/0x0073-style words
         - total output matches word 20 + word 21 combined at word boundaries
-        - temperature and battery mappings are reasonably stable
-        - serial number remains unconfirmed
+        - serial number is stable in raw[-17:-1]
+        - battery health candidate is stable at 100 from word 36
         """
         params = self._default_parameters()
 
@@ -157,18 +157,12 @@ class F2000(SolixBLEDevice):
                 2, byteorder="little", signed=True
             )
 
-        def u16_be(idx: int) -> int:
-            if idx < 0 or idx + 1 >= len(b):
-                return 0
-            return (b[idx] << 8) | b[idx + 1]
-
         # Remaining time:
-        # b[17] is tenths-of-hours remainder, b[18] is days.
-        remaining_hours_tenths = b[17] if len(b) > 17 else 0
-        remaining_days = b[18] if len(b) > 18 else 0
-        total_remaining_tenths = (remaining_days * 24 * 10) + remaining_hours_tenths
-        if 0 <= total_remaining_tenths <= 24 * 365 * 10:
-            set_u16("a4", total_remaining_tenths)
+        # word 8 behaves like tenths-of-hours in your captures: 005A,005C,0049,0048.
+        if len(words) > 8:
+            remaining_tenths = words[8]
+            if 0 <= remaining_tenths <= 10000:
+                set_u16("a4", remaining_tenths)
 
         # Total input:
         # In your captures these repeated words tracked the screen exactly:
@@ -180,7 +174,6 @@ class F2000(SolixBLEDevice):
             set_u16("a5", total_input)
 
         # Total output:
-        # Use word boundaries, not free byte offsets.
         # word20=0004, word21=0100 -> 0x0104 = 260
         # word20=0006, word21=0100 -> 0x0106 = 262
         # word20=0021, word21=0100 -> 0x0121 = 289
@@ -193,23 +186,31 @@ class F2000(SolixBLEDevice):
             set_u16("b0", total_output)
             set_u16("a6", total_output)
 
-        # Leave DC/solar input unset for now; current mapping is not validated.
-        # Leave dedicated DC outputs unset for now; not enough evidence yet.
+        # Temperature candidate
+        if len(words) > 24:
+            main_temp = words[24] & 0x00FF
+            if main_temp >= 128:
+                main_temp -= 256
+            set_s16("bd", main_temp)
 
-        # Temperature
-        main_temp = b[66] if len(b) > 66 else 0
-        if main_temp >= 128:
-            main_temp -= 256
-        set_s16("bd", main_temp)
+        # Battery percentage candidate from word 35:
+        # 5B00 -> 91, 5A00 -> 90
+        if len(words) > 35:
+            main_battery = (words[35] >> 8) | ((words[35] & 0x00FF) << 8)
+            if 0 <= main_battery <= 100:
+                set_u16("c1", main_battery)
 
-        # Battery
-        main_battery = b[70] if len(b) > 70 else 0
-        if 0 <= main_battery <= 100:
-            set_u16("c1", main_battery)
+        # Battery health candidate from word 36:
+        # 6400 -> 100 in all four captures
+        if len(words) > 36:
+            battery_health = (words[36] >> 8) | ((words[36] & 0x00FF) << 8)
+            if 0 <= battery_health <= 100:
+                set_u16("c3", battery_health)
 
-        expansion_battery = b[71] if len(b) > 71 else 0
-        if 0 <= expansion_battery <= 100:
-            set_u16("c2", expansion_battery)
+        # Stable serial number from the 16 bytes immediately before the final byte
+        serial_bytes = raw[-17:-1]
+        if len(serial_bytes) == 16 and all(32 <= x < 127 for x in serial_bytes):
+            params["d0"] = b"\x10" + serial_bytes
 
         return params
 
