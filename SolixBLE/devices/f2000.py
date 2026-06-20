@@ -132,7 +132,7 @@ class F2000(SolixBLEDevice):
         Current confidence:
         - time remaining uses byte 17 tenths of hours plus byte 18 days
         - total input matches repeated 0x0075/0x0073-style words
-        - total output matches little-endian bytes at offset 40/41
+        - total output matches word 20 + word 21 combined at word boundaries
         - temperature and battery mappings are reasonably stable
         - serial number remains unconfirmed
         """
@@ -142,6 +142,10 @@ class F2000(SolixBLEDevice):
             return params
 
         b = list(raw)
+        words = [
+            int.from_bytes(raw[i:i + 2], byteorder="big", signed=False)
+            for i in range(0, len(raw), 2)
+        ]
 
         def set_u16(key: str, value: int) -> None:
             params[key] = b"\x01" + int(value).to_bytes(
@@ -152,11 +156,6 @@ class F2000(SolixBLEDevice):
             params[key] = b"\x01" + int(value).to_bytes(
                 2, byteorder="little", signed=True
             )
-
-        def u16_le(idx: int) -> int:
-            if idx < 0 or idx + 1 >= len(b):
-                return 0
-            return b[idx] | (b[idx + 1] << 8)
 
         def u16_be(idx: int) -> int:
             if idx < 0 or idx + 1 >= len(b):
@@ -172,21 +171,24 @@ class F2000(SolixBLEDevice):
             set_u16("a4", total_remaining_tenths)
 
         # Total input:
-        # In your four captures the repeated words at byte pairs 36/37 and 38/39
-        # tracked the screen exactly as 117,117,115,115.
-        # Map total input to af (ac_power_in sensor in HA).
-        total_input = u16_be(36)
+        # In your captures these repeated words tracked the screen exactly:
+        # 0075,0075 then 0073,0073 => 117,117 then 115,115.
+        # Map screen total input to HA ac_power_in (af).
+        total_input = words[18] if len(words) > 18 else 0
         if 0 <= total_input <= 5000:
             set_u16("af", total_input)
-
-        # Keep a5 mirrored for now as "power to battery" / charging-related total.
-        if 0 <= total_input <= 5000:
             set_u16("a5", total_input)
 
         # Total output:
-        # Your captures show bytes 40/41 interpreted little-endian produce
-        # exactly 260, 262, 289, 308.
-        total_output = u16_le(40)
+        # Use word boundaries, not free byte offsets.
+        # word20=0004, word21=0100 -> 0x0104 = 260
+        # word20=0006, word21=0100 -> 0x0106 = 262
+        # word20=0021, word21=0100 -> 0x0121 = 289
+        # word20=0034, word21=0100 -> 0x0134 = 308
+        total_output = 0
+        if len(words) > 21:
+            total_output = (words[21] & 0xFF00) | (words[20] & 0x00FF)
+
         if 0 <= total_output <= 5000:
             set_u16("b0", total_output)
             set_u16("a6", total_output)
@@ -199,8 +201,6 @@ class F2000(SolixBLEDevice):
         if main_temp >= 128:
             main_temp -= 256
         set_s16("bd", main_temp)
-
-        # Expansion temperature remains unconfirmed; leave default.
 
         # Battery
         main_battery = b[70] if len(b) > 70 else 0
@@ -326,12 +326,12 @@ class F2000(SolixBLEDevice):
 
     @property
     def ac_power_in(self) -> int:
-        """Mapped to total input from the screen."""
+        """Mapped to screen total input."""
         return self._parse_int("af", begin=1)
 
     @property
     def ac_power_out(self) -> int:
-        """Mapped to total output from the screen."""
+        """Mapped to screen total output."""
         return self._parse_int("b0", begin=1)
 
     @property
