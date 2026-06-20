@@ -130,11 +130,12 @@ class F2000(SolixBLEDevice):
         Parse the observed 102-byte F2000 09FF telemetry frame.
 
         Current confidence:
-        - time remaining uses byte/word area around word 8
+        - time remaining uses word 8
         - total input matches repeated 0x0075/0x0073-style words
         - total output matches word 20 + word 21 combined at word boundaries
         - serial number is stable in raw[-17:-1]
         - battery health candidate is stable at 100 from word 36
+        - temperature should remain on the earlier byte-based mapping
         """
         params = self._default_parameters()
 
@@ -158,16 +159,14 @@ class F2000(SolixBLEDevice):
             )
 
         # Remaining time:
-        # word 8 behaves like tenths-of-hours in your captures: 005A,005C,0049,0048.
+        # word 8 behaved plausibly in your captures: 005A, 005C, 0049, 0048.
         if len(words) > 8:
             remaining_tenths = words[8]
             if 0 <= remaining_tenths <= 10000:
                 set_u16("a4", remaining_tenths)
 
         # Total input:
-        # In your captures these repeated words tracked the screen exactly:
         # 0075,0075 then 0073,0073 => 117,117 then 115,115.
-        # Map screen total input to HA ac_power_in (af).
         total_input = words[18] if len(words) > 18 else 0
         if 0 <= total_input <= 5000:
             set_u16("af", total_input)
@@ -186,12 +185,12 @@ class F2000(SolixBLEDevice):
             set_u16("b0", total_output)
             set_u16("a6", total_output)
 
-        # Temperature candidate
-        if len(words) > 24:
-            main_temp = words[24] & 0x00FF
-            if main_temp >= 128:
-                main_temp -= 256
-            set_s16("bd", main_temp)
+        # Temperature:
+        # Reverted to earlier byte-based mapping because it matched the real unit.
+        main_temp = b[66] if len(b) > 66 else 0
+        if main_temp >= 128:
+            main_temp -= 256
+        set_s16("bd", main_temp)
 
         # Battery percentage candidate from word 35:
         # 5B00 -> 91, 5A00 -> 90
