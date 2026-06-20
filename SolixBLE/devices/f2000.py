@@ -151,7 +151,12 @@ class F2000(SolixBLEDevice):
                 set_u16("a4", remaining_tenths)
 
         if len(words) > 18:
-            total_input = words[18]
+            solar_input = words[18]
+            if 0 <= solar_input <= 5000:
+                set_u16("ae", solar_input)
+
+        if len(words) > 10:
+            total_input = (words[10] & 0xFF00) | (words[9] & 0x00FF)
             if 0 <= total_input <= 5000:
                 set_u16("af", total_input)
                 set_u16("a5", total_input)
