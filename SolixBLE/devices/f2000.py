@@ -191,6 +191,11 @@ class F2000(SolixBLEDevice):
             main_temp -= 256
         set_s16("bd", main_temp)
 
+        expansion_temp = b[67] if len(b) > 67 else 0
+        if expansion_temp >= 128:
+            expansion_temp -= 256
+        set_s16("be", expansion_temp)
+
         packed_battery_format = False
 
         if len(words) > 35:
