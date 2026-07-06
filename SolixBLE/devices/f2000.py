@@ -131,7 +131,7 @@ class F2000(SolixBLEDevice):
 
         b = list(raw)
         words = [
-            int.from_bytes(raw[i:i + 2], byteorder="big", signed=False)
+            int.from_bytes(raw[i : i + 2], byteorder="big", signed=False)
             for i in range(0, len(raw), 2)
         ]
 
@@ -144,6 +144,9 @@ class F2000(SolixBLEDevice):
             params[key] = b"\x01" + int(value).to_bytes(
                 2, byteorder="little", signed=True
             )
+
+        def swap_u16(value: int) -> int:
+            return (value >> 8) | ((value & 0x00FF) << 8)
 
         if len(words) > 8:
             remaining_tenths = words[8]
@@ -188,15 +191,43 @@ class F2000(SolixBLEDevice):
             main_temp -= 256
         set_s16("bd", main_temp)
 
+        packed_battery_format = False
+
         if len(words) > 35:
-            main_battery = (words[35] >> 8) | ((words[35] & 0x00FF) << 8)
-            if 0 <= main_battery <= 100:
-                set_u16("c1", main_battery)
+            legacy_main_battery = swap_u16(words[35])
+            main_battery_byte = (words[35] >> 8) & 0xFF
+            expansion_battery_byte = words[35] & 0xFF
+
+            if 0 <= legacy_main_battery <= 100:
+                set_u16("c1", legacy_main_battery)
+                set_u16("c2", 0)
+            elif 0 <= main_battery_byte <= 100 and 0 <= expansion_battery_byte <= 100:
+                set_u16("c1", main_battery_byte)
+                set_u16("c2", expansion_battery_byte)
+                packed_battery_format = True
 
         if len(words) > 36:
-            battery_health = (words[36] >> 8) | ((words[36] & 0x00FF) << 8)
-            if 0 <= battery_health <= 100:
-                set_u16("c3", battery_health)
+            legacy_battery_health = swap_u16(words[36])
+            main_battery_health_byte = (words[36] >> 8) & 0xFF
+            expansion_battery_health_byte = words[36] & 0xFF
+
+            if packed_battery_format:
+                if 0 <= main_battery_health_byte <= 100:
+                    set_u16("c3", main_battery_health_byte)
+                if 0 <= expansion_battery_health_byte <= 100:
+                    set_u16("c4", expansion_battery_health_byte)
+            elif 0 <= legacy_battery_health <= 100:
+                set_u16("c3", legacy_battery_health)
+                set_u16("c4", 0)
+            elif (
+                0 <= main_battery_health_byte <= 100
+                and 0 <= expansion_battery_health_byte <= 100
+            ):
+                set_u16("c3", main_battery_health_byte)
+                set_u16("c4", expansion_battery_health_byte)
+                packed_battery_format = True
+
+        set_u16("c5", 1 if packed_battery_format else 0)
 
         serial_bytes = raw[-17:-1]
         if len(serial_bytes) == 16 and all(32 <= x < 127 for x in serial_bytes):
