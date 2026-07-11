@@ -55,34 +55,188 @@ class F2000(SolixBLEDevice):
     def available(self) -> bool:
         return self.connected and self._data is not None
 
-    async def _send_command(self, cmd: bytes, payload: bytes) -> None:
-        """Send a plaintext (unencrypted) command to the F2000.
+    @staticmethod
+    def _checksum(packet: bytes) -> int:
+        """Compute the F2000 command checksum.
 
-        Confirmed via testing that the F2000 does not perform the
-        ECDH/AES negotiation handshake other Solix devices use (it never
-        responds to negotiation requests), so there is no shared secret to
-        encrypt with. This sends the same cmd/payload structure as F2600
-        commands, but wrapped in plaintext packet framing instead of being
-        AES-encrypted, using the negotiation pattern "030001" (the only
-        other plaintext pattern used elsewhere in the base protocol).
+        The reverse-engineered protocol docs (cclaunch/anker_ble) do not
+        state the exact checksum algorithm used, only that byte N+1 (the
+        last byte) of a command packet is "a checksum". This uses a
+        simple sum-of-bytes-mod-256 as a first guess, which is the most
+        common scheme for this style of simple serial/BLE protocol.
 
-        NOTE: This pattern choice is not yet confirmed to be correct for
-        F2000 commands -- if the device does not respond to this, the
-        F2000 likely uses a different, currently-unknown wire format for
-        commands entirely, and would require a BLE traffic capture of the
-        official app to identify the correct bytes.
+        NOTE: NOT CONFIRMED. If commands are accepted (a "Command Ack"
+        notification with the matching command ID appears) then this
+        guess was right. If the device silently ignores the command, this
+        is the most likely culprit and the algorithm will need to be
+        determined empirically (e.g. by installing the reference
+        `anker_ble` library directly and comparing its checksum output
+        for known packets against this implementation).
 
-        :param cmd: 2 bytes containing command type.
-        :param payload: Variable number of bytes containing arguments.
+        :param packet: All bytes of the packet before the checksum byte.
+        :returns: Single checksum byte value.
+        """
+        return sum(packet) & 0xFF
+
+    async def _send_command(self, command_id: int, parameters: bytes = b"") -> None:
+        """Send a command to the F2000 using its native (non-SolixBLE)
+        command protocol, reverse engineered by cclaunch/anker_ble.
+
+        Confirmed via testing that the F2000 does not use the standard
+        SolixBLE framing/encryption at all: it exposes its own plaintext
+        GATT characteristics (0x7777 for commands, 0x8888 for telemetry)
+        completely separate from `UUID_COMMAND`/`UUID_TELEMETRY` used by
+        other Solix devices. This method builds packets in that device's
+        native format instead of using `_build_packet`/`_encrypt_payload`
+        from the base class.
+
+        Packet format: `08 ee 00 00 00 02` + command_id + length byte +
+        parameter bytes + checksum byte.
+
+        :param command_id: Single byte command ID (see F2000 command
+            table, e.g. 0x86 for AC output, 0x87 for 12V output).
+        :param parameters: Parameter bytes for the command (already
+            including any required 0x00 padding bytes per the command
+            spec -- this method does not add padding automatically).
         :raises ConnectionError: If not connected to device.
         :raises BleakError: If command transmission fails.
         """
         if not self.connected:
             raise ConnectionError("Not connected to device")
 
-        packet = self._build_packet(bytes.fromhex("030001"), cmd, payload)
-        _LOGGER.debug(f"Sending plaintext F2000 command packet: {packet.hex()}")
+        header = bytes.fromhex("08ee000000 02".replace(" ", ""))
+        length = len(parameters) + 3  # command_id + length byte + parameters + checksum, per observed packet lengths
+        body = header + bytes([command_id, length]) + parameters
+        checksum = self._checksum(body)
+        packet = body + bytes([checksum])
+
+        _LOGGER.debug(f"Sending F2000 native command packet: {packet.hex()}")
         await self._client.write_gatt_char(UUID_COMMAND, packet)
+
+    async def turn_ac_on(self) -> None:
+        """Turn the AC output on.
+
+        :raises ConnectionError: If not connected to device.
+        :raises BleakError: If command transmission fails.
+        """
+        await self._send_command(command_id=0x86, parameters=bytes.fromhex("0001"))
+
+    async def turn_ac_off(self) -> None:
+        """Turn the AC output off.
+
+        :raises ConnectionError: If not connected to device.
+        :raises BleakError: If command transmission fails.
+        """
+        await self._send_command(command_id=0x86, parameters=bytes.fromhex("0000"))
+
+    async def turn_dc_on(self) -> None:
+        """Turn the 12V/DC output on.
+
+        :raises ConnectionError: If not connected to device.
+        :raises BleakError: If command transmission fails.
+        """
+        await self._send_command(command_id=0x87, parameters=bytes.fromhex("0001"))
+
+    async def turn_dc_off(self) -> None:
+        """Turn the 12V/DC output off.
+
+        :raises ConnectionError: If not connected to device.
+        :raises BleakError: If command transmission fails.
+        """
+        await self._send_command(command_id=0x87, parameters=bytes.fromhex("0000"))
+
+    async def turn_power_saving_mode_on(self) -> None:
+        """Turn Power Save mode on.
+
+        :raises ConnectionError: If not connected to device.
+        :raises BleakError: If command transmission fails.
+        """
+        await self._send_command(command_id=0x8A, parameters=bytes.fromhex("0001"))
+
+    async def turn_power_saving_mode_off(self) -> None:
+        """Turn Power Save mode off.
+
+        :raises ConnectionError: If not connected to device.
+        :raises BleakError: If command transmission fails.
+        """
+        await self._send_command(command_id=0x8A, parameters=bytes.fromhex("0000"))
+
+    async def set_display_mode(self, level: int) -> None:
+        """Set screen brightness.
+
+        :param level: 0=off, 1=low, 2=medium, 3=high.
+        :raises ValueError: If level is out of range.
+        :raises ConnectionError: If not connected to device.
+        :raises BleakError: If command transmission fails.
+        """
+        if level not in (0, 1, 2, 3):
+            raise ValueError("Screen brightness level must be between 0 and 3")
+        await self._send_command(command_id=0x88, parameters=bytes([0x00, level]))
+
+    async def set_light_mode(self, level: int) -> None:
+        """Set the side LED strip mode.
+
+        :param level: 0=off, 1=low, 2=medium, 3=high, 4=SOS.
+        :raises ValueError: If level is out of range.
+        :raises ConnectionError: If not connected to device.
+        :raises BleakError: If command transmission fails.
+        """
+        if level not in (0, 1, 2, 3, 4):
+            raise ValueError("LED mode must be between 0 and 4")
+        await self._send_command(command_id=0x8B, parameters=bytes([0x00, level]))
+
+    async def set_ac_charging_power(self, watts: int) -> None:
+        """Set AC recharge power limit in watts.
+
+        :param watts: Recharge power in watts. Known-good values from the
+            Anker app: 200, 300, 400, 500, 600, 750, 1440.
+        :raises ConnectionError: If not connected to device.
+        :raises BleakError: If command transmission fails.
+        """
+        await self._send_command(
+            command_id=0x80,
+            parameters=bytes([0x00]) + watts.to_bytes(2, byteorder="little"),
+        )
+
+    async def set_display_timeout(self, seconds: int) -> None:
+        """Set the screen timeout in seconds. Anecdotally must be >= 10.
+
+        :param seconds: Timeout in seconds.
+        :raises ConnectionError: If not connected to device.
+        :raises BleakError: If command transmission fails.
+        """
+        await self._send_command(
+            command_id=0x82,
+            parameters=bytes([0x00]) + seconds.to_bytes(2, byteorder="little"),
+        )
+
+    async def set_ac_timer(self, seconds: int) -> None:
+        """Set AC auto-off timer. Anecdotally must be >= 10.
+
+        :param seconds: Seconds until AC output shuts off.
+        :raises ConnectionError: If not connected to device.
+        :raises BleakError: If command transmission fails.
+        """
+        await self._send_command(
+            command_id=0x02,
+            parameters=bytes([0x00])
+            + seconds.to_bytes(2, byteorder="little")
+            + bytes([0x00, 0x00]),
+        )
+
+    async def set_dc_timer(self, seconds: int) -> None:
+        """Set 12V auto-off timer. Anecdotally must be >= 10.
+
+        :param seconds: Seconds until 12V output shuts off.
+        :raises ConnectionError: If not connected to device.
+        :raises BleakError: If command transmission fails.
+        """
+        await self._send_command(
+            command_id=0x03,
+            parameters=bytes([0x00])
+            + seconds.to_bytes(2, byteorder="little")
+            + bytes([0x00, 0x00]),
+        )
 
     async def connect(self, max_attempts: int = 3, run_callbacks: bool = True) -> bool:
         """Connect to the F2000, subscribing to raw telemetry AND running
@@ -312,12 +466,20 @@ class F2000(SolixBLEDevice):
     ) -> None:
         """Process a notification from the F2000.
 
-        Negotiation-pattern packets (pattern "030001") are routed to the
-        base class's `_process_negotiation` so the ECDH/AES handshake can
-        complete (required for commands to work). All other packets are
-        assumed to be raw fixed-length telemetry frames in the F2000's own
-        format and are parsed with `_parse_raw_telemetry` instead of the
-        base class's fragmented/encrypted telemetry parsing.
+        Confirmed via cclaunch/anker_ble reverse engineering that F2000
+        notifications share a common header `09 ff 00 00 01` followed by
+        a type byte that distinguishes three formats:
+
+        - Telemetry (type byte 6 == 0x49): full 102-byte telemetry frame,
+          parsed with `_parse_raw_telemetry`.
+        - State Ack (type byte 6 == 0x48): 14-byte frame sent whenever a
+          physical button is pressed on the device; reflects the current
+          AC/12V/Power Save/LED state.
+        - Command Ack (byte 5 == 0x02): 10-byte frame sent in response to
+          a command being received, echoing the command ID in byte 6.
+          This is the confirmation that a command was actually accepted
+          by the device -- watch for this in logs after sending a
+          command.
         """
         if self._client is not client:
             _LOGGER.debug("Ignoring notification from old client")
@@ -330,7 +492,7 @@ class F2000(SolixBLEDevice):
             f"Received raw F2000 notification from '{self.name}'. length: {len(raw)}, packet: '{raw.hex()}'"
         )
 
-        if len(raw) < 4:
+        if len(raw) < 7:
             _LOGGER.debug("Ignoring short F2000 notification")
             return
 
@@ -338,18 +500,17 @@ class F2000(SolixBLEDevice):
             _LOGGER.debug(f"Ignoring non-F2000 frame header: {raw[:2].hex()}")
             return
 
-        # Try to detect a standard negotiation-pattern packet using the
-        # base class's packet splitting logic. If this succeeds and the
-        # pattern is the negotiation pattern, hand off to the base class's
-        # negotiation handler instead of treating it as raw telemetry.
-        try:
-            pattern, cmd, payload = self._split_packet(raw)
-        except ValueError:
-            pattern = None
+        if raw[5] == 0x02:
+            _LOGGER.debug(
+                f"Received F2000 Command Ack for command ID 0x{raw[6]:02x} -- command was accepted by device!"
+            )
+            return
 
-        if pattern is not None and pattern.hex() == "030001":
-            _LOGGER.debug("Received encryption negotiation message on F2000!")
-            await self._process_negotiation(cmd, payload)
+        if raw[6] == 0x48:
+            _LOGGER.debug(
+                f"Received F2000 State Ack: AC={raw[9]}, 12V={raw[10]}, "
+                f"PowerSave={raw[11]}, LED={raw[12]}"
+            )
             return
 
         parameters = self._parse_raw_telemetry(raw)
