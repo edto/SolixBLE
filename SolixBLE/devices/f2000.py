@@ -11,6 +11,7 @@ from ..const import (
     DEFAULT_METADATA_FLOAT,
     DEFAULT_METADATA_INT,
     DEFAULT_METADATA_STRING,
+    UUID_COMMAND,
     UUID_TELEMETRY,
 )
 from ..states import LightStatus
@@ -49,6 +50,28 @@ class F2000(SolixBLEDevice):
     @property
     def available(self) -> bool:
         return self.connected and self._data is not None
+
+    async def _send_command(self, cmd: bytes, payload: bytes) -> None:
+        """Send a plaintext (unencrypted) command to the F2000.
+
+        The F2000 does not perform the ECDH/AES negotiation handshake that
+        other Solix devices use (telemetry is sent as plaintext), so unlike
+        the base class implementation this does NOT encrypt the payload or
+        append a replay-protection timestamp derived from
+        `_negotiation_timestamp` (which is never set on this device). The
+        payload is sent as-is, wrapped in the standard packet framing.
+
+        :param cmd: 2 bytes containing command type.
+        :param payload: Variable number of bytes containing arguments.
+        :raises ConnectionError: If not connected to device.
+        :raises BleakError: If command transmission fails.
+        """
+        if not self.connected:
+            raise ConnectionError("Not connected to device")
+
+        packet = self._build_packet(bytes.fromhex("030001"), cmd, payload)
+        _LOGGER.debug(f"Sending plaintext F2000 command packet: {packet.hex()}")
+        await self._client.write_gatt_char(UUID_COMMAND, packet)
 
     async def connect(self, max_attempts: int = 3, run_callbacks: bool = True) -> bool:
         self._connection_attempts = self._connection_attempts + 1
@@ -92,35 +115,6 @@ class F2000(SolixBLEDevice):
                 f"Error subscribing to F2000 telemetry on '{self.name}'!"
             )
             return False
-
-        # The F2000 does not perform the ECDH/AES negotiation handshake that
-        # other Solix devices use (it streams plaintext telemetry directly),
-        # so `_negotiation_timestamp` is never set by `_process_negotiation()`.
-        # `_send_command()` in the base class requires this to be a real
-        # timestamp (it is used to build a replay-protection timestamp in
-        # command payloads), so we set it manually here once the connection
-        # and telemetry subscription succeed.
-        self._negotiation_timestamp = time.time()
-
-        # The base class also gates `negotiated` on `_shared_secret` being
-        # set, which the F2000 never populates since it skips encryption
-        # negotiation entirely. We set a dummy non-None value so that
-        # `negotiated` (and therefore `available` and command sending)
-        # reflects the real state of the connection instead of always being
-        # False.
-        #
-        # NOTE: `_send_command()` in the base class routes through
-        # `_send_encrypted_packet()`, which calls `_encrypt_payload()` and
-        # uses `self._shared_secret[:16]` as the AES key and
-        # `self._shared_secret[16:]` as the IV. That slicing requires at
-        # least 32 bytes or `AES.new()` will raise its own error, so we use
-        # 32 zero bytes here rather than a single byte. If the F2000
-        # actually expects *unencrypted* command payloads (consistent with
-        # it skipping negotiation for telemetry), commands sent this way may
-        # still be ignored/rejected by the device even though no exception
-        # is raised. If that turns out to be the case, `_send_command` will
-        # need to be overridden here to skip encryption entirely.
-        self._shared_secret = b"\x00" * 32
 
         self._connection_attempts = 0
 
