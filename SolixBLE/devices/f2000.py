@@ -11,8 +11,6 @@ from ..const import (
     DEFAULT_METADATA_FLOAT,
     DEFAULT_METADATA_INT,
     DEFAULT_METADATA_STRING,
-    NEGOTIATION_RESPONSE_TIMEOUT,
-    NEGOTIATION_TIMEOUT,
     UUID_COMMAND,
     UUID_TELEMETRY,
 )
@@ -47,19 +45,44 @@ class F2000(SolixBLEDevice):
 
     @property
     def negotiated(self) -> bool:
-        """Has an encrypted session been successfully negotiated.
-
-        Unlike other Solix devices, telemetry availability on the F2000
-        does not depend on this (raw telemetry works without negotiation),
-        but sending commands (AC/DC output, etc.) does require this to be
-        True, since `_send_command` uses `_shared_secret` to encrypt
-        command payloads.
+        """F2000 has no encryption negotiation step (confirmed via testing:
+        it never responds to negotiation requests), so this simply mirrors
+        `connected`.
         """
-        return self.connected and self._shared_secret is not None
+        return self.connected
 
     @property
     def available(self) -> bool:
         return self.connected and self._data is not None
+
+    async def _send_command(self, cmd: bytes, payload: bytes) -> None:
+        """Send a plaintext (unencrypted) command to the F2000.
+
+        Confirmed via testing that the F2000 does not perform the
+        ECDH/AES negotiation handshake other Solix devices use (it never
+        responds to negotiation requests), so there is no shared secret to
+        encrypt with. This sends the same cmd/payload structure as F2600
+        commands, but wrapped in plaintext packet framing instead of being
+        AES-encrypted, using the negotiation pattern "030001" (the only
+        other plaintext pattern used elsewhere in the base protocol).
+
+        NOTE: This pattern choice is not yet confirmed to be correct for
+        F2000 commands -- if the device does not respond to this, the
+        F2000 likely uses a different, currently-unknown wire format for
+        commands entirely, and would require a BLE traffic capture of the
+        official app to identify the correct bytes.
+
+        :param cmd: 2 bytes containing command type.
+        :param payload: Variable number of bytes containing arguments.
+        :raises ConnectionError: If not connected to device.
+        :raises BleakError: If command transmission fails.
+        """
+        if not self.connected:
+            raise ConnectionError("Not connected to device")
+
+        packet = self._build_packet(bytes.fromhex("030001"), cmd, payload)
+        _LOGGER.debug(f"Sending plaintext F2000 command packet: {packet.hex()}")
+        await self._client.write_gatt_char(UUID_COMMAND, packet)
 
     async def connect(self, max_attempts: int = 3, run_callbacks: bool = True) -> bool:
         """Connect to the F2000, subscribing to raw telemetry AND running
@@ -118,32 +141,12 @@ class F2000(SolixBLEDevice):
             )
             return False
 
-        # Negotiate encryption alongside raw telemetry subscription. This
-        # is required for `_send_command` (inherited from the base class)
-        # to produce valid encrypted command payloads.
-        try:
-            async with asyncio.timeout(NEGOTIATION_TIMEOUT):
-                while not self.negotiated:
-                    if (
-                        self._last_packet_timestamp is None
-                        or (time.time() - self._last_packet_timestamp)
-                        > NEGOTIATION_RESPONSE_TIMEOUT
-                    ):
-                        _LOGGER.debug(
-                            f"Sending negotiation initiation request to '{self.name}'..."
-                        )
-                        await self._initiate_negotiations()
-
-                    for _ in range(0, NEGOTIATION_RESPONSE_TIMEOUT):
-                        await asyncio.sleep(1)
-                        if self.negotiated:
-                            break
-        except TimeoutError:
-            _LOGGER.exception(
-                f"Timed out attempting to negotiate encryption with '{self.name}'!"
-                " Telemetry will still work but commands will not."
-            )
-
+        # NOTE: Confirmed via testing that the F2000 does NOT respond to
+        # negotiation requests at all (no "030001" pattern packet is ever
+        # received), unlike other Solix devices. The handshake attempt
+        # below has been removed since it always times out and delays
+        # connect() for no benefit. Commands are sent unencrypted -- see
+        # `_send_command` override below.
         self._connection_attempts = 0
 
         if self._disconnect_event.is_set():
