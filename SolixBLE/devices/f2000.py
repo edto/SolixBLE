@@ -104,8 +104,13 @@ class F2000(SolixBLEDevice):
         if not self.connected:
             raise ConnectionError("Not connected to device")
 
-        header = bytes.fromhex("08ee000000 02".replace(" ", ""))
-        length = len(parameters) + 3  # command_id + length byte + parameters + checksum, per observed packet lengths
+        header = bytes.fromhex("08ee00000002")
+        # "length" here is the length of the ENTIRE packet (header + command
+        # ID byte + length byte + parameters + checksum), confirmed against
+        # the reference cclaunch/anker_ble command.py implementation -- NOT
+        # just len(parameters). Header is 6 bytes, +1 command ID, +1 length
+        # byte, +1 checksum = 9 fixed bytes plus the parameter bytes.
+        length = 9 + len(parameters)
         body = header + bytes([command_id, length]) + parameters
         checksum = self._checksum(body)
         packet = body + bytes([checksum])
