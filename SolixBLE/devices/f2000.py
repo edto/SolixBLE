@@ -93,6 +93,35 @@ class F2000(SolixBLEDevice):
             )
             return False
 
+        # The F2000 does not perform the ECDH/AES negotiation handshake that
+        # other Solix devices use (it streams plaintext telemetry directly),
+        # so `_negotiation_timestamp` is never set by `_process_negotiation()`.
+        # `_send_command()` in the base class requires this to be a real
+        # timestamp (it is used to build a replay-protection timestamp in
+        # command payloads), so we set it manually here once the connection
+        # and telemetry subscription succeed.
+        self._negotiation_timestamp = time.time()
+
+        # The base class also gates `negotiated` on `_shared_secret` being
+        # set, which the F2000 never populates since it skips encryption
+        # negotiation entirely. We set a dummy non-None value so that
+        # `negotiated` (and therefore `available` and command sending)
+        # reflects the real state of the connection instead of always being
+        # False.
+        #
+        # NOTE: `_send_command()` in the base class routes through
+        # `_send_encrypted_packet()`, which calls `_encrypt_payload()` and
+        # uses `self._shared_secret[:16]` as the AES key and
+        # `self._shared_secret[16:]` as the IV. That slicing requires at
+        # least 32 bytes or `AES.new()` will raise its own error, so we use
+        # 32 zero bytes here rather than a single byte. If the F2000
+        # actually expects *unencrypted* command payloads (consistent with
+        # it skipping negotiation for telemetry), commands sent this way may
+        # still be ignored/rejected by the device even though no exception
+        # is raised. If that turns out to be the case, `_send_command` will
+        # need to be overridden here to skip encryption entirely.
+        self._shared_secret = b"\x00" * 32
+
         self._connection_attempts = 0
 
         if self._disconnect_event.is_set():
