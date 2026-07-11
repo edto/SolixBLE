@@ -363,9 +363,42 @@ class F2000(SolixBLEDevice):
             "c4": b"\x01\x00",
             "c5": b"\x01\x00",
             "d0": b"\x10" + b"0" * 16,
+            "d5": b"\x01\x00",
+            "d6": b"\x01\x00",
         }
 
     def _parse_raw_telemetry(self, raw: bytes) -> dict[str, bytes]:
+        """Parse a full 102-byte F2000 Telemetry frame.
+
+        Byte offsets below are taken directly from the documented
+        cclaunch/anker_ble Telemetry format (all 2-byte integers are
+        little-endian per that spec) rather than the previous
+        heuristic/guessed "word bucket" parsing. Confirmed byte layout:
+
+            Bytes 19-20: AC input watts
+            Bytes 21-22: AC output watts
+            Bytes 23-24: Top USB-C watts
+            Bytes 25-26: Middle USB-C watts
+            Bytes 27-28: Bottom USB-C watts
+            Bytes 29-30: Top USB-A watts
+            Bytes 31-32: Bottom USB-A watts
+            Bytes 33-34: Top 12V watts
+            Bytes 35-36: Bottom 12V watts
+            Bytes 37-38: Solar input watts
+            Bytes 39-40: Total input watts
+            Bytes 41-42: Total output watts
+
+        NOTE: Bytes 9-12 (AC/12V/Power Save/LED status) are NOT read here.
+        Those only exist in the separate 14-byte State Ack frame -- in the
+        full Telemetry frame, bytes 9-10 mean something different (AC
+        timer remaining). Reading switch state from Telemetry bytes 9-12
+        would misparse the AC timer as outlet status, and would also
+        reset AC/12V switch state to off on every routine Telemetry
+        update since this method rebuilds its params dict from scratch.
+        Switch state is populated exclusively from State Ack frames in
+        `_process_notification`, merged onto existing data rather than
+        overwriting it.
+        """
         params = self._default_parameters()
 
         if len(raw) != self._EXPECTED_TELEMETRY_LENGTH:
@@ -387,6 +420,10 @@ class F2000(SolixBLEDevice):
                 2, byteorder="little", signed=True
             )
 
+        def le16(index: int) -> int:
+            """Read a documented little-endian 2-byte field at byte `index`."""
+            return int.from_bytes(raw[index : index + 2], byteorder="little")
+
         def swap_u16(value: int) -> int:
             return (value >> 8) | ((value & 0x00FF) << 8)
 
@@ -395,38 +432,21 @@ class F2000(SolixBLEDevice):
             if 0 <= remaining_tenths <= 10000:
                 set_u16("a4", remaining_tenths)
 
-        if len(words) > 18:
-            solar_input = words[18]
-            if 0 <= solar_input <= 5000:
-                set_u16("ae", solar_input)
-
-        if len(words) > 10:
-            total_input = (words[10] & 0xFF00) | (words[9] & 0x00FF)
-            if 0 <= total_input <= 5000:
-                set_u16("af", total_input)
-                set_u16("a5", total_input)
-
-        if len(words) > 21:
-            total_output = (words[21] & 0xFF00) | (words[20] & 0x00FF)
-            if 0 <= total_output <= 5000:
-                set_u16("b0", total_output)
-                set_u16("a6", total_output)
-
-        if len(words) > 16:
-            dc_output_candidate = words[16]
-            if 0 <= dc_output_candidate <= 5000:
-                set_u16("ac", dc_output_candidate)
-
-        if len(words) > 30:
-            ac_enabled = 1 if words[30] == 0x0001 else 0
-            set_u16("b1", ac_enabled)
-
-        if len(words) > 32:
-            dc_state_bucket = words[32]
-            if dc_state_bucket in (0x2000, 0x2200):
-                set_u16("b2", 1 if dc_state_bucket == 0x2200 else 0)
-            else:
-                set_u16("b2", 0)
+        # Documented power telemetry fields (bytes 19-42), read directly
+        # per the README's confirmed little-endian byte offsets. Mapped
+        # onto the existing property names used elsewhere in this class:
+        set_u16("a5", le16(19))    # AC input watts       -> ac_to_battery
+        set_u16("b0", le16(21))    # AC output watts       -> ac_power_out
+        set_u16("a7", le16(23))    # Top USB-C watts        -> usb_c1_power
+        set_u16("a8", le16(25))    # Middle USB-C watts     -> usb_c2_power
+        set_u16("a9", le16(27))    # Bottom USB-C watts     -> usb_c3_power
+        set_u16("aa", le16(29))    # Top USB-A watts        -> usb_a1_power
+        set_u16("ab", le16(31))    # Bottom USB-A watts     -> usb_a2_power
+        set_u16("ac", le16(33))    # Top 12V watts          -> dc_1_power_out
+        set_u16("ad", le16(35))    # Bottom 12V watts       -> dc_2_power_out
+        set_u16("ae", le16(37))    # Solar input watts      -> solar_power_in
+        set_u16("af", le16(39))    # Total input watts      -> ac_power_in
+        set_u16("a6", le16(41))    # Total output watts     -> ac_power_out_sockets
 
         main_temp = b[66] if len(b) > 66 else 0
         if main_temp >= 128:
@@ -549,6 +569,8 @@ class F2000(SolixBLEDevice):
             params = dict(self._data) if self._data is not None else self._default_parameters()
             params["b1"] = b"\x01" + ac_on.to_bytes(2, byteorder="little")
             params["b2"] = b"\x01" + dc_on.to_bytes(2, byteorder="little")
+            params["d5"] = b"\x01" + power_save_on.to_bytes(2, byteorder="little")
+            params["d6"] = b"\x01" + led_state.to_bytes(2, byteorder="little")
 
             await self._process_telemetry(params)
             return
@@ -637,6 +659,21 @@ class F2000(SolixBLEDevice):
     @property
     def dc12v_enabled(self) -> int:
         return self._parse_int("b2", begin=1)
+
+    @property
+    def power_save_enabled(self) -> int:
+        """Power Save mode status, confirmed only via State Ack packets
+        (byte 11). Full Telemetry frames do not carry this."""
+        return self._parse_int("d5", begin=1)
+
+    @property
+    def led_state(self) -> int:
+        """LED strip status, confirmed only via State Ack packets (byte
+        12): 0=off, 1=low, 2=mid, 3=high, 4=SOS. Full Telemetry frames do
+        not carry this -- this will read as the default/unknown value
+        until a button is pressed or a command is sent, since the F2000
+        only reports LED state reactively via State Ack."""
+        return self._parse_int("d6", begin=1)
 
     @property
     def software_version(self) -> str:
