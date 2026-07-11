@@ -11,6 +11,8 @@ from ..const import (
     DEFAULT_METADATA_FLOAT,
     DEFAULT_METADATA_INT,
     DEFAULT_METADATA_STRING,
+    NEGOTIATION_RESPONSE_TIMEOUT,
+    NEGOTIATION_TIMEOUT,
     UUID_COMMAND,
     UUID_TELEMETRY,
 )
@@ -45,35 +47,35 @@ class F2000(SolixBLEDevice):
 
     @property
     def negotiated(self) -> bool:
-        return self.connected
+        """Has an encrypted session been successfully negotiated.
+
+        Unlike other Solix devices, telemetry availability on the F2000
+        does not depend on this (raw telemetry works without negotiation),
+        but sending commands (AC/DC output, etc.) does require this to be
+        True, since `_send_command` uses `_shared_secret` to encrypt
+        command payloads.
+        """
+        return self.connected and self._shared_secret is not None
 
     @property
     def available(self) -> bool:
         return self.connected and self._data is not None
 
-    async def _send_command(self, cmd: bytes, payload: bytes) -> None:
-        """Send a plaintext (unencrypted) command to the F2000.
-
-        The F2000 does not perform the ECDH/AES negotiation handshake that
-        other Solix devices use (telemetry is sent as plaintext), so unlike
-        the base class implementation this does NOT encrypt the payload or
-        append a replay-protection timestamp derived from
-        `_negotiation_timestamp` (which is never set on this device). The
-        payload is sent as-is, wrapped in the standard packet framing.
-
-        :param cmd: 2 bytes containing command type.
-        :param payload: Variable number of bytes containing arguments.
-        :raises ConnectionError: If not connected to device.
-        :raises BleakError: If command transmission fails.
-        """
-        if not self.connected:
-            raise ConnectionError("Not connected to device")
-
-        packet = self._build_packet(bytes.fromhex("030001"), cmd, payload)
-        _LOGGER.debug(f"Sending plaintext F2000 command packet: {packet.hex()}")
-        await self._client.write_gatt_char(UUID_COMMAND, packet)
-
     async def connect(self, max_attempts: int = 3, run_callbacks: bool = True) -> bool:
+        """Connect to the F2000, subscribing to raw telemetry AND running
+        the standard ECDH/AES negotiation handshake.
+
+        The F2000 sends telemetry as fixed-length raw frames rather than
+        the fragmented/encrypted format other Solix devices use, which is
+        why `_process_notification` is overridden below to parse those
+        separately. However, commands (AC/DC output, etc.) still require a
+        real negotiated shared secret and negotiation timestamp -- without
+        running negotiation, `_send_command` (inherited from the base
+        class) will silently send garbage encrypted payloads the device
+        ignores. This override performs both: it subscribes to telemetry
+        notifications, then runs the same negotiation loop as the base
+        class's `connect()`.
+        """
         self._connection_attempts = self._connection_attempts + 1
 
         try:
@@ -115,6 +117,32 @@ class F2000(SolixBLEDevice):
                 f"Error subscribing to F2000 telemetry on '{self.name}'!"
             )
             return False
+
+        # Negotiate encryption alongside raw telemetry subscription. This
+        # is required for `_send_command` (inherited from the base class)
+        # to produce valid encrypted command payloads.
+        try:
+            async with asyncio.timeout(NEGOTIATION_TIMEOUT):
+                while not self.negotiated:
+                    if (
+                        self._last_packet_timestamp is None
+                        or (time.time() - self._last_packet_timestamp)
+                        > NEGOTIATION_RESPONSE_TIMEOUT
+                    ):
+                        _LOGGER.debug(
+                            f"Sending negotiation initiation request to '{self.name}'..."
+                        )
+                        await self._initiate_negotiations()
+
+                    for _ in range(0, NEGOTIATION_RESPONSE_TIMEOUT):
+                        await asyncio.sleep(1)
+                        if self.negotiated:
+                            break
+        except TimeoutError:
+            _LOGGER.exception(
+                f"Timed out attempting to negotiate encryption with '{self.name}'!"
+                " Telemetry will still work but commands will not."
+            )
 
         self._connection_attempts = 0
 
@@ -279,6 +307,15 @@ class F2000(SolixBLEDevice):
     async def _process_notification(
         self, client: BleakClient, handle: int, data: bytearray
     ) -> None:
+        """Process a notification from the F2000.
+
+        Negotiation-pattern packets (pattern "030001") are routed to the
+        base class's `_process_negotiation` so the ECDH/AES handshake can
+        complete (required for commands to work). All other packets are
+        assumed to be raw fixed-length telemetry frames in the F2000's own
+        format and are parsed with `_parse_raw_telemetry` instead of the
+        base class's fragmented/encrypted telemetry parsing.
+        """
         if self._client is not client:
             _LOGGER.debug("Ignoring notification from old client")
             return
@@ -296,6 +333,20 @@ class F2000(SolixBLEDevice):
 
         if raw[:2] not in (bytes.fromhex("09ff"), bytes.fromhex("ff09")):
             _LOGGER.debug(f"Ignoring non-F2000 frame header: {raw[:2].hex()}")
+            return
+
+        # Try to detect a standard negotiation-pattern packet using the
+        # base class's packet splitting logic. If this succeeds and the
+        # pattern is the negotiation pattern, hand off to the base class's
+        # negotiation handler instead of treating it as raw telemetry.
+        try:
+            pattern, cmd, payload = self._split_packet(raw)
+        except ValueError:
+            pattern = None
+
+        if pattern is not None and pattern.hex() == "030001":
+            _LOGGER.debug("Received encryption negotiation message on F2000!")
+            await self._process_negotiation(cmd, payload)
             return
 
         parameters = self._parse_raw_telemetry(raw)
