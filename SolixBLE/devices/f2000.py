@@ -13,9 +13,23 @@ from ..const import (
     DEFAULT_METADATA_STRING,
     UUID_TELEMETRY,
 )
+from ..states import LightStatus
 from ..device import SolixBLEDevice
 
 _LOGGER = logging.getLogger(__name__)
+
+# Commands confirmed working on F2000 by community testing against F2600 command set.
+CMD_AC_OUTPUT = "404a"
+CMD_DC_OUTPUT = "404b"
+CMD_LIGHT_MODE = "404f"
+CMD_DISPLAY_ON_OFF = "4052"
+CMD_POWER_SAVING_MODE = "404e"
+CMD_AC_CHARGING_POWER = "4044"  # Not yet confirmed working on F2000.
+
+PAYLOAD_ON = "a10121a2020101"
+PAYLOAD_OFF = "a10121a2020100"
+PAYLOAD_LIGHT_MODE = "a10121a20201"
+PAYLOAD_AC_CHARGING_POWER = "a10121a20302"
 
 
 class F2000(SolixBLEDevice):
@@ -68,7 +82,6 @@ class F2000(SolixBLEDevice):
         _LOGGER.debug(
             f"Established initial F2000 connection to '{self.name}' on attempt {self._connection_attempts}!"
         )
-
         try:
             await self._client.start_notify(
                 UUID_TELEMETRY,
@@ -401,3 +414,135 @@ class F2000(SolixBLEDevice):
         if not value or value == "0" or set(value) == {"0"}:
             return DEFAULT_METADATA_STRING
         return value
+
+    # ------------------------------------------------------------------
+    # Commands ported from the F2600 command set. Confirmed working on
+    # F2000 by community testing (see project discussion):
+    #   - AC output on/off
+    #   - DC output on/off
+    #   - LED (low, med, high, SOS, off)
+    #   - Display on/off
+    #   - Power Saving Mode on/off
+    # Not yet confirmed working on F2000:
+    #   - AC charging power limit
+    # ------------------------------------------------------------------
+
+    async def turn_ac_on(self) -> None:
+        """Turn the AC output on.
+
+        :raises ConnectionError: If not connected to device.
+        :raises BleakError: If command transmission fails.
+        """
+        await self._send_command(
+            cmd=bytes.fromhex(CMD_AC_OUTPUT), payload=bytes.fromhex(PAYLOAD_ON)
+        )
+
+    async def turn_ac_off(self) -> None:
+        """Turn the AC output off.
+
+        :raises ConnectionError: If not connected to device.
+        :raises BleakError: If command transmission fails.
+        """
+        await self._send_command(
+            cmd=bytes.fromhex(CMD_AC_OUTPUT), payload=bytes.fromhex(PAYLOAD_OFF)
+        )
+
+    async def turn_dc_on(self) -> None:
+        """Turn the DC output on.
+
+        :raises ConnectionError: If not connected to device.
+        :raises BleakError: If command transmission fails.
+        """
+        await self._send_command(
+            cmd=bytes.fromhex(CMD_DC_OUTPUT), payload=bytes.fromhex(PAYLOAD_ON)
+        )
+
+    async def turn_dc_off(self) -> None:
+        """Turn the DC output off.
+
+        :raises ConnectionError: If not connected to device.
+        :raises BleakError: If command transmission fails.
+        """
+        await self._send_command(
+            cmd=bytes.fromhex(CMD_DC_OUTPUT), payload=bytes.fromhex(PAYLOAD_OFF)
+        )
+
+    async def set_light_mode(self, mode: LightStatus) -> None:
+        """Set the light mode of the LED bar.
+
+        Supports LOW, MEDIUM, HIGH, SOS, and OFF.
+
+        :param mode: Mode to set light bar to.
+        :raises ValueError: If requested mode is invalid.
+        :raises ConnectionError: If not connected to device.
+        :raises BleakError: If command transmission fails.
+        """
+        if mode is LightStatus.UNKNOWN:
+            raise ValueError("You cannot set the light status to unknown")
+        await self._send_command(
+            cmd=bytes.fromhex(CMD_LIGHT_MODE),
+            payload=bytes.fromhex(PAYLOAD_LIGHT_MODE) + mode.value.to_bytes(),
+        )
+
+    async def turn_display_on(self) -> None:
+        """Turn the display on.
+
+        :raises ConnectionError: If not connected to device.
+        :raises BleakError: If command transmission fails.
+        """
+        await self._send_command(
+            cmd=bytes.fromhex(CMD_DISPLAY_ON_OFF), payload=bytes.fromhex(PAYLOAD_ON)
+        )
+
+    async def turn_display_off(self) -> None:
+        """Turn the display off.
+
+        :raises ConnectionError: If not connected to device.
+        :raises BleakError: If command transmission fails.
+        """
+        await self._send_command(
+            cmd=bytes.fromhex(CMD_DISPLAY_ON_OFF), payload=bytes.fromhex(PAYLOAD_OFF)
+        )
+
+    async def turn_power_saving_mode_on(self) -> None:
+        """Turn power saving mode on.
+
+        :raises ConnectionError: If not connected to device.
+        :raises BleakError: If command transmission fails.
+        """
+        await self._send_command(
+            cmd=bytes.fromhex(CMD_POWER_SAVING_MODE),
+            payload=bytes.fromhex(PAYLOAD_ON),
+        )
+
+    async def turn_power_saving_mode_off(self) -> None:
+        """Turn power saving mode off.
+
+        :raises ConnectionError: If not connected to device.
+        :raises BleakError: If command transmission fails.
+        """
+        await self._send_command(
+            cmd=bytes.fromhex(CMD_POWER_SAVING_MODE),
+            payload=bytes.fromhex(PAYLOAD_OFF),
+        )
+
+    async def set_ac_charging_power(self, watts: int) -> None:
+        """Set the AC charging power limit in watts.
+
+        NOTE: Not yet confirmed working on F2000 hardware. Ported from the
+        F2600 command set for testing purposes; verify behaviour carefully
+        on your device before relying on it.
+
+        :param watts: AC charging power limit in watts.
+        :raises ValueError: If power value is out of valid range.
+        :raises ConnectionError: If not connected to device.
+        :raises BleakError: If command transmission fails.
+        """
+        if watts < 100 or watts > 1440:  # below 100 causes max charge, 1440 is max in app.
+            raise ValueError("AC charging power must be between 100 and 1440 W")
+
+        await self._send_command(
+            cmd=bytes.fromhex(CMD_AC_CHARGING_POWER),
+            payload=bytes.fromhex(PAYLOAD_AC_CHARGING_POWER)
+            + watts.to_bytes(length=2, byteorder="little", signed=False),
+        )
