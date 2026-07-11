@@ -178,14 +178,23 @@ class F2000(SolixBLEDevice):
             raise ValueError("Screen brightness level must be between 0 and 3")
         await self._send_command(command_id=0x88, parameters=bytes([0x00, level]))
 
-    async def set_light_mode(self, level: int) -> None:
+    async def set_light_mode(self, level) -> None:
         """Set the side LED strip mode.
 
-        :param level: 0=off, 1=low, 2=medium, 3=high, 4=SOS.
+        Accepts either a plain int (0=off, 1=low, 2=medium, 3=high, 4=SOS)
+        or a `LightStatus` enum member -- select.py passes the enum
+        directly, so we normalize via `.value` if present rather than
+        comparing the enum member against raw ints (which silently fails
+        and raises ValueError for every option if `LightStatus` is not an
+        `IntEnum`).
+
+        :param level: 0=off, 1=low, 2=medium, 3=high, 4=SOS, or the
+            equivalent `LightStatus` enum member.
         :raises ValueError: If level is out of range.
         :raises ConnectionError: If not connected to device.
         :raises BleakError: If command transmission fails.
         """
+        level = getattr(level, "value", level)
         if level not in (0, 1, 2, 3, 4):
             raise ValueError("LED mode must be between 0 and 4")
         await self._send_command(command_id=0x8B, parameters=bytes([0x00, level]))
@@ -193,11 +202,18 @@ class F2000(SolixBLEDevice):
     async def set_ac_charging_power(self, watts: int) -> None:
         """Set AC recharge power limit in watts.
 
-        :param watts: Recharge power in watts. Known-good values from the
-            Anker app: 200, 300, 400, 500, 600, 750, 1440.
+        The README's documented canned values (200-1440W) reflect the
+        base F2000/PowerHouse 767 -- confirmed via user testing this
+        specific unit accepts up to 2200W, so the valid range is widened
+        to 200-2200W accordingly.
+
+        :param watts: Recharge power in watts, 200-2200.
+        :raises ValueError: If watts is out of range.
         :raises ConnectionError: If not connected to device.
         :raises BleakError: If command transmission fails.
         """
+        if not 200 <= watts <= 2200:
+            raise ValueError("AC charging power must be between 200 and 2200 W")
         await self._send_command(
             command_id=0x80,
             parameters=bytes([0x00]) + watts.to_bytes(2, byteorder="little"),
@@ -512,10 +528,29 @@ class F2000(SolixBLEDevice):
             return
 
         if raw[6] == 0x48:
+            ac_on = raw[9]
+            dc_on = raw[10]
+            power_save_on = raw[11]
+            led_state = raw[12]
+
             _LOGGER.debug(
-                f"Received F2000 State Ack: AC={raw[9]}, 12V={raw[10]}, "
-                f"PowerSave={raw[11]}, LED={raw[12]}"
+                f"Received F2000 State Ack: AC={ac_on}, 12V={dc_on}, "
+                f"PowerSave={power_save_on}, LED={led_state}"
             )
+
+            # State Ack packets confirm the actual current state of the
+            # switchable outputs -- these must be merged into self._data
+            # and trigger callbacks. Previously this branch only logged
+            # and returned, so the AC/DC switch entities (which read
+            # `ac_inverter_enabled`/`dc12v_enabled`, backed by params
+            # "b1"/"b2") never learned the confirmed state and reverted
+            # to whatever the last full Telemetry packet showed -- this
+            # was the cause of "switches don't remember state".
+            params = dict(self._data) if self._data is not None else self._default_parameters()
+            params["b1"] = b"\x01" + ac_on.to_bytes(2, byteorder="little")
+            params["b2"] = b"\x01" + dc_on.to_bytes(2, byteorder="little")
+
+            await self._process_telemetry(params)
             return
 
         parameters = self._parse_raw_telemetry(raw)
