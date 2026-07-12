@@ -15,6 +15,7 @@ from ..const import (
     UUID_TELEMETRY,
 )
 from ..device import SolixBLEDevice
+from ..states import ChargingStatus
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -82,6 +83,7 @@ class F2000(SolixBLEDevice):
             "b4": b"\x01\x00",
             "b5": b"\x01\x00",
             "b6": b"\x01\x00",
+            "b7": b"\x01\x00",
             "b8": b"\x01\x00",
             "b9": b"\x01\x00",
             "ba": b"\x01\x00",
@@ -191,40 +193,37 @@ class F2000(SolixBLEDevice):
             expansion_temp -= 256
         set_s16("be", expansion_temp)
 
-        packed_battery_format = False
+        # ADDED: byte 68 per README ("Battery state: 0=Idle,
+        # 1=Discharging, 2=Charging"). Was previously entirely unmapped.
+        set_u16("b7", b[68] if len(b) > 68 else 0)
 
-        if len(raw) > 71:
-            legacy_main_battery = int.from_bytes(raw[70:72], byteorder="big")
-            main_battery_byte = raw[70]
-            expansion_battery_byte = raw[71]
+        # FIX: README documents bytes 70, 71, and 72 as three
+        # INDEPENDENT single bytes ("Main battery percentage", "External
+        # battery percentage", "Total battery percentage" respectively) --
+        # not a combined 16-bit word. The previous code first tried
+        # interpreting raw[70:72] as one big-endian 16-bit "legacy" value
+        # and only fell back to simple per-byte reads if that failed. This
+        # coincidentally worked most of the time (percentages are 0-100,
+        # so byte 71 is often small enough that the guess didn't misfire),
+        # but it was needlessly convoluted and undocumented. Reading each
+        # byte directly now, matching the README exactly.
+        set_u16("c1", raw[70] if len(raw) > 70 else 0)
+        set_u16("c2", raw[71] if len(raw) > 71 else 0)
 
-            if 0 <= legacy_main_battery <= 100:
-                set_u16("c1", legacy_main_battery)
-                set_u16("c2", 0)
-            elif 0 <= main_battery_byte <= 100 and 0 <= expansion_battery_byte <= 100:
-                set_u16("c1", main_battery_byte)
-                set_u16("c2", expansion_battery_byte)
-                packed_battery_format = True
+        # NOTE: "battery health" (c3/c4) intentionally still reads bytes
+        # 72-73 here (Total battery percentage / Unknown per README) --
+        # left unchanged per explicit instruction; this is a separate,
+        # already-flagged discrepancy from the true byte map and no
+        # action was requested on it in this fix.
+        set_u16("c3", raw[72] if len(raw) > 72 else 0)
+        set_u16("c4", raw[73] if len(raw) > 73 else 0)
 
-        if len(raw) > 73:
-            legacy_battery_health = int.from_bytes(raw[72:74], byteorder="big")
-            main_battery_health_byte = raw[72]
-            expansion_battery_health_byte = raw[73]
-
-            if packed_battery_format:
-                if 0 <= main_battery_health_byte <= 100:
-                    set_u16("c3", main_battery_health_byte)
-                if 0 <= expansion_battery_health_byte <= 100:
-                    set_u16("c4", expansion_battery_health_byte)
-            elif 0 <= legacy_battery_health <= 100:
-                set_u16("c3", legacy_battery_health)
-                set_u16("c4", 0)
-            elif 0 <= main_battery_health_byte <= 100 and 0 <= expansion_battery_health_byte <= 100:
-                set_u16("c3", main_battery_health_byte)
-                set_u16("c4", expansion_battery_health_byte)
-                packed_battery_format = True
-
-        set_u16("c5", 1 if packed_battery_format else 0)
+        # c5 (num_expansion) previously derived from whether the "legacy"
+        # 16-bit guess above succeeded, which no longer applies now that
+        # both fields are read as plain independent bytes. An expansion
+        # battery is present whenever byte 71 (external battery
+        # percentage) reports a real, non-zero value.
+        set_u16("c5", 1 if len(raw) > 71 and raw[71] > 0 else 0)
 
         serial_bytes = raw[85:101] if len(raw) >= 101 else b""
         if len(serial_bytes) == 16 and all(32 <= x < 127 for x in serial_bytes):
@@ -504,6 +503,20 @@ class F2000(SolixBLEDevice):
         (0=off, 1=low, 2=mid, 3=high, 4=SOS).
         """
         return self._parse_int("b6", begin=1)
+
+    @property
+    def charging_status(self) -> ChargingStatus:
+        """Battery charging state, captured from Telemetry byte 68.
+
+        ADDED: per README ("Byte 68: Battery state
+        (0=Idle, 1=Discharging, 2=Charging)"). Previously unmapped.
+        UPDATED: returns the shared ChargingStatus enum (same as F2600's
+        charging_status) rather than a plain int, so sensor.py's existing
+        ENUM-based sensor plumbing (which expects an enum member with a
+        `.value` attribute) can be reused for the F2000 without any
+        further changes there.
+        """
+        return ChargingStatus(self._parse_int("b7", begin=1))
 
     @property
     def software_version(self) -> str:
