@@ -141,9 +141,17 @@ class F2000(SolixBLEDevice):
         def le16(index: int) -> int:
             return int.from_bytes(raw[index : index + 2], byteorder="little")
 
-        if len(raw) > 18:
-            remaining_tenths = int(b[17]) * 10 if len(b) > 17 else 0
-            set_u16("a4", remaining_tenths)
+        if len(raw) >= 18:
+            # FIX: "remaining hours" must come from the 16-bit big-endian
+            # word spanning bytes 16-17, stored directly (as tenths of an
+            # hour) with NO extra multiplication -- time_remaining already
+            # divides this by 10.0. The previous code read only byte 17
+            # and multiplied it by 10, which both discarded byte 16 and
+            # cancelled out the /10.0 in time_remaining, silently reporting
+            # the wrong "hours remaining" value.
+            remaining_tenths = int.from_bytes(raw[16:18], byteorder="big")
+            if 0 <= remaining_tenths < 10000:
+                set_u16("a4", remaining_tenths)
 
         set_u16("af", le16(19))  # AC input watts
         set_u16("b0", le16(21))  # AC output watts
@@ -329,7 +337,7 @@ class F2000(SolixBLEDevice):
         400, 500, 600, 750, 1440 (silent 749, high speed 1439), but any
         value in the documented range is accepted here.
         """
-        if not 200 <= watts <= 2200:
+        if not 200 <= watts <= 1440:
             raise ValueError(f"power must be a value from 200 to 1440. {watts} was given.")
         await self._send_command(0x80, watts.to_bytes(2, byteorder="little"))
 
