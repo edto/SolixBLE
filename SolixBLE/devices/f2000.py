@@ -81,6 +81,7 @@ class F2000(SolixBLEDevice):
             "b3": b"\x01\x00",
             "b4": b"\x01\x00",
             "b5": b"\x01\x00",
+            "b6": b"\x01\x00",
             "b9": b"\x01\x00",
             "ba": b"\x01\x00",
             "bd": b"\x01\x00",
@@ -257,19 +258,25 @@ class F2000(SolixBLEDevice):
             ac_on = raw[9]
             dc_on = raw[10]
             power_save_on = raw[11] if len(raw) > 11 else 0
+            led_level = raw[12] if len(raw) > 12 else 0
 
             _LOGGER.debug(
                 f"Received F2000 State Ack: AC={ac_on}, 12V={dc_on}, "
-                f"PowerSave={power_save_on}, LED={raw[12] if len(raw) > 12 else 0}"
+                f"PowerSave={power_save_on}, LED={led_level}"
             )
 
             params = dict(self._data) if self._data is not None else self._default_parameters()
             params["b1"] = b"\x01" + ac_on.to_bytes(2, byteorder="little")
             params["b2"] = b"\x01" + dc_on.to_bytes(2, byteorder="little")
-            # ADDED: capture Power Saving Mode status from the State Ack
-            # frame (byte 11), same pattern as AC/DC output above, so the
-            # Power Saving Mode switch reflects real device state.
+            # Capture Power Saving Mode status from the State Ack frame
+            # (byte 11), same pattern as AC/DC output above, so the Power
+            # Saving Mode switch reflects real device state.
             params["b5"] = b"\x01" + power_save_on.to_bytes(2, byteorder="little")
+            # ADDED: capture LED status from the State Ack frame (byte 12)
+            # the same way. Previously this was read into the debug log
+            # line only and then discarded -- the LED Light select entity
+            # had no real device-reported state to sync to.
+            params["b6"] = b"\x01" + led_level.to_bytes(2, byteorder="little")
 
             await self._process_telemetry(params)
             return
@@ -287,9 +294,15 @@ class F2000(SolixBLEDevice):
             if self._data is not None:
                 parameters["b1"] = self._data.get("b1", parameters["b1"])
                 parameters["b2"] = self._data.get("b2", parameters["b2"])
-                # ADDED: preserve Power Saving Mode state across routine
+                # Preserve Power Saving Mode state across routine
                 # Telemetry updates, same reasoning as b1/b2 above.
                 parameters["b5"] = self._data.get("b5", parameters["b5"])
+                # ADDED: preserve LED state across routine Telemetry
+                # updates too, same reasoning -- Telemetry frames don't
+                # carry byte 9-12 status at all, so without this merge
+                # every Telemetry update would silently reset LED state
+                # back to the "off" default.
+                parameters["b6"] = self._data.get("b6", parameters["b6"])
 
             await self._process_telemetry(parameters)
             return
@@ -446,6 +459,13 @@ class F2000(SolixBLEDevice):
     def power_save_enabled(self) -> int:
         """Power Saving Mode state, captured from State Ack byte 11."""
         return self._parse_int("b5", begin=1)
+
+    @property
+    def led_light_mode(self) -> int:
+        """LED light bar mode, captured from State Ack byte 12
+        (0=off, 1=low, 2=mid, 3=high, 4=SOS).
+        """
+        return self._parse_int("b6", begin=1)
 
     @property
     def software_version(self) -> str:
