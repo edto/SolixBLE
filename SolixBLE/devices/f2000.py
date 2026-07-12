@@ -80,6 +80,7 @@ class F2000(SolixBLEDevice):
             "b2": b"\x01\x00",
             "b3": b"\x01\x00",
             "b4": b"\x01\x00",
+            "b5": b"\x01\x00",
             "b9": b"\x01\x00",
             "ba": b"\x01\x00",
             "bd": b"\x01\x00",
@@ -98,18 +99,18 @@ class F2000(SolixBLEDevice):
         Byte offsets confirmed directly from the anker_ble README (all
         2-byte integers little-endian):
 
-            Bytes 19-20: AC input watts          -> ac_power_in ("af")
-            Bytes 21-22: AC output watts         -> ac_power_out ("b0")
-            Bytes 23-24: Top USB-C watts         -> usb_c1_power ("a7")
-            Bytes 25-26: Middle USB-C watts      -> usb_c2_power ("a8")
-            Bytes 27-28: Bottom USB-C watts      -> usb_c3_power ("a9")
-            Bytes 29-30: Top USB-A watts         -> usb_a1_power ("aa")
-            Bytes 31-32: Bottom USB-A watts      -> usb_a2_power ("ab")
-            Bytes 33-34: Top 12V watts           -> dc_1_power_out ("ac")
-            Bytes 35-36: Bottom 12V watts        -> dc_2_power_out ("ad")
-            Bytes 37-38: Solar input watts       -> solar_power_in ("ae")
-            Bytes 39-40: Total input watts       -> total_power_in ("b4")
-            Bytes 41-42: Total output watts      -> ac_power_out_sockets ("a6")
+        Bytes 19-20: AC input watts -> ac_power_in ("af")
+        Bytes 21-22: AC output watts -> ac_power_out ("b0")
+        Bytes 23-24: Top USB-C watts -> usb_c1_power ("a7")
+        Bytes 25-26: Middle USB-C watts -> usb_c2_power ("a8")
+        Bytes 27-28: Bottom USB-C watts -> usb_c3_power ("a9")
+        Bytes 29-30: Top USB-A watts -> usb_a1_power ("aa")
+        Bytes 31-32: Bottom USB-A watts -> usb_a2_power ("ab")
+        Bytes 33-34: Top 12V watts -> dc_1_power_out ("ac")
+        Bytes 35-36: Bottom 12V watts -> dc_2_power_out ("ad")
+        Bytes 37-38: Solar input watts -> solar_power_in ("ae")
+        Bytes 39-40: Total input watts -> total_power_in ("b4")
+        Bytes 41-42: Total output watts -> ac_power_out_sockets ("a6")
 
         FIX: previously "af" (ac_power_in) was wired to bytes 39-40 (Total
         input), which is a DIFFERENT quantity than "AC input watts" (bytes
@@ -144,18 +145,18 @@ class F2000(SolixBLEDevice):
             remaining_tenths = int(b[17]) * 10 if len(b) > 17 else 0
             set_u16("a4", remaining_tenths)
 
-        set_u16("af", le16(19))    # AC input watts
-        set_u16("b0", le16(21))    # AC output watts
-        set_u16("a7", le16(23))    # Top USB-C watts
-        set_u16("a8", le16(25))    # Middle USB-C watts
-        set_u16("a9", le16(27))    # Bottom USB-C watts
-        set_u16("aa", le16(29))    # Top USB-A watts
-        set_u16("ab", le16(31))    # Bottom USB-A watts
-        set_u16("ac", le16(33))    # Top 12V watts
-        set_u16("ad", le16(35))    # Bottom 12V watts
-        set_u16("ae", le16(37))    # Solar input watts
-        set_u16("b4", le16(39))    # Total input watts (was mis-mapped to "af")
-        set_u16("a6", le16(41))    # Total output watts
+        set_u16("af", le16(19))  # AC input watts
+        set_u16("b0", le16(21))  # AC output watts
+        set_u16("a7", le16(23))  # Top USB-C watts
+        set_u16("a8", le16(25))  # Middle USB-C watts
+        set_u16("a9", le16(27))  # Bottom USB-C watts
+        set_u16("aa", le16(29))  # Top USB-A watts
+        set_u16("ab", le16(31))  # Bottom USB-A watts
+        set_u16("ac", le16(33))  # Top 12V watts
+        set_u16("ad", le16(35))  # Bottom 12V watts
+        set_u16("ae", le16(37))  # Solar input watts
+        set_u16("b4", le16(39))  # Total input watts (was mis-mapped to "af")
+        set_u16("a6", le16(41))  # Total output watts
 
         main_temp = b[66] if len(b) > 66 else 0
         if main_temp >= 128:
@@ -239,15 +240,20 @@ class F2000(SolixBLEDevice):
         if raw[6] == 0x48:
             ac_on = raw[9]
             dc_on = raw[10]
+            power_save_on = raw[11] if len(raw) > 11 else 0
 
             _LOGGER.debug(
                 f"Received F2000 State Ack: AC={ac_on}, 12V={dc_on}, "
-                f"PowerSave={raw[11]}, LED={raw[12]}"
+                f"PowerSave={power_save_on}, LED={raw[12] if len(raw) > 12 else 0}"
             )
 
             params = dict(self._data) if self._data is not None else self._default_parameters()
             params["b1"] = b"\x01" + ac_on.to_bytes(2, byteorder="little")
             params["b2"] = b"\x01" + dc_on.to_bytes(2, byteorder="little")
+            # ADDED: capture Power Saving Mode status from the State Ack
+            # frame (byte 11), same pattern as AC/DC output above, so the
+            # Power Saving Mode switch reflects real device state.
+            params["b5"] = b"\x01" + power_save_on.to_bytes(2, byteorder="little")
 
             await self._process_telemetry(params)
             return
@@ -265,6 +271,9 @@ class F2000(SolixBLEDevice):
             if self._data is not None:
                 parameters["b1"] = self._data.get("b1", parameters["b1"])
                 parameters["b2"] = self._data.get("b2", parameters["b2"])
+                # ADDED: preserve Power Saving Mode state across routine
+                # Telemetry updates, same reasoning as b1/b2 above.
+                parameters["b5"] = self._data.get("b5", parameters["b5"])
 
             await self._process_telemetry(parameters)
             return
@@ -284,6 +293,45 @@ class F2000(SolixBLEDevice):
     async def turn_dc_off(self) -> None:
         """Turn the 12V (DC) output off."""
         await self._send_command(0x87, b"\x00\x00")
+
+    async def turn_power_save_on(self) -> None:
+        """Turn Power Saving Mode on.
+
+        Command ID 0x8A per README ("Power Save" section), same payload
+        shape as turn_ac_on/turn_dc_on above.
+        """
+        await self._send_command(0x8A, b"\x00\x01")
+
+    async def turn_power_save_off(self) -> None:
+        """Turn Power Saving Mode off."""
+        await self._send_command(0x8A, b"\x00\x00")
+
+    async def set_light_mode(self, mode) -> None:
+        """Set the LED light bar mode (off/low/medium/high/SOS).
+
+        Command ID 0x8B per README ("LED Control" section). Accepts either
+        a LightStatus enum member or a raw int 0-4. This mirrors the
+        existing turn_ac_on/turn_dc_on command pattern. Note the F2000
+        telemetry stream does not expose a readable LED status, so the
+        select entity that calls this remains optimistic (reports the
+        last mode it was told to set).
+        """
+        level = mode.value if hasattr(mode, "value") else int(mode)
+        if not 0 <= level <= 4:
+            raise ValueError(f"LED light mode must be a value from 0 to 4. {level} was given.")
+        await self._send_command(0x8B, bytes([0x00, level]))
+
+    async def set_ac_charging_power(self, watts: int) -> None:
+        """Set the AC Charging Power Limit (recharge power).
+
+        Command ID 0x80 per README ("Recharge Power" section). Valid range
+        is 200-1440 watts. Canned values in the Anker app are 200, 300,
+        400, 500, 600, 750, 1440 (silent 749, high speed 1439), but any
+        value in the documented range is accepted here.
+        """
+        if not 200 <= watts <= 2200:
+            raise ValueError(f"power must be a value from 200 to 1440. {watts} was given.")
+        await self._send_command(0x80, watts.to_bytes(2, byteorder="little"))
 
     @property
     def hours_remaining(self) -> float:
@@ -377,6 +425,11 @@ class F2000(SolixBLEDevice):
     @property
     def dc12v_enabled(self) -> int:
         return self._parse_int("b2", begin=1)
+
+    @property
+    def power_save_enabled(self) -> int:
+        """Power Saving Mode state, captured from State Ack byte 11."""
+        return self._parse_int("b5", begin=1)
 
     @property
     def software_version(self) -> str:
