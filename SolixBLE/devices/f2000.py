@@ -1,11 +1,8 @@
-"""F2000 (Anker PowerHouse 767) device implementation."""
-
-from __future__ import annotations
-
+import asyncio
 import logging
 import time
 from datetime import datetime, timedelta
-from enum import Enum
+from functools import partial
 
 from bleak import BleakClient, BleakError
 from bleak_retry_connector import establish_connection
@@ -21,15 +18,17 @@ from ..device import SolixBLEDevice
 
 _LOGGER = logging.getLogger(__name__)
 
+CMD_AC_OUTPUT = "404a"
+CMD_DC_OUTPUT = "404b"
+CMD_LIGHT_MODE = "404f"
+CMD_DISPLAY_ON_OFF = "4052"
+CMD_POWER_SAVING_MODE = "404e"
+CMD_AC_CHARGING_POWER = "4044"
 
-class LightStatus(Enum):
-    """LED light bar brightness/mode levels."""
-
-    OFF = 0
-    LOW = 1
-    MEDIUM = 2
-    HIGH = 3
-    SOS = 4
+PAYLOAD_ON = "a10121a2020101"
+PAYLOAD_OFF = "a10121a2020100"
+PAYLOAD_LIGHT_MODE = "a10121a20201"
+PAYLOAD_AC_CHARGING_POWER = "a10121a20302"
 
 
 class F2000(SolixBLEDevice):
@@ -97,9 +96,33 @@ class F2000(SolixBLEDevice):
         """Parse a full 102-byte F2000 Telemetry frame.
 
         Byte offsets confirmed directly from the anker_ble README (all
-        2-byte integers little-endian). See prior fix notes: ac_power_in
-        now correctly reads bytes 19-20 ("AC input watts"), separate from
-        total_power_in (bytes 39-40, "Total input watts").
+        2-byte integers little-endian):
+
+            Bytes 19-20: AC input watts          -> ac_power_in ("af")
+            Bytes 21-22: AC output watts         -> ac_power_out ("b0")
+            Bytes 23-24: Top USB-C watts         -> usb_c1_power ("a7")
+            Bytes 25-26: Middle USB-C watts      -> usb_c2_power ("a8")
+            Bytes 27-28: Bottom USB-C watts      -> usb_c3_power ("a9")
+            Bytes 29-30: Top USB-A watts         -> usb_a1_power ("aa")
+            Bytes 31-32: Bottom USB-A watts      -> usb_a2_power ("ab")
+            Bytes 33-34: Top 12V watts           -> dc_1_power_out ("ac")
+            Bytes 35-36: Bottom 12V watts        -> dc_2_power_out ("ad")
+            Bytes 37-38: Solar input watts       -> solar_power_in ("ae")
+            Bytes 39-40: Total input watts       -> total_power_in ("b4")
+            Bytes 41-42: Total output watts      -> ac_power_out_sockets ("a6")
+
+        FIX: previously "af" (ac_power_in) was wired to bytes 39-40 (Total
+        input), which is a DIFFERENT quantity than "AC input watts" (bytes
+        19-20). This caused ac_power_in to silently equal solar_power_in
+        whenever the unit was running on solar only with no AC charging
+        (since Total input = AC input + Solar input, and AC input = 0 in
+        that case), which looked like "AC Power In reports the same as
+        solar" -- it was actually reporting Total input under the wrong
+        name. Total input now gets its own key/property (`total_power_in`,
+        "b4") so it is not confused with true AC-only input.
+
+        NOTE: Bytes 9-12 (switch/LED/Power-Save status) are intentionally
+        NOT read here -- those only exist in the separate State Ack frame.
         """
         params = self._default_parameters()
 
@@ -131,7 +154,7 @@ class F2000(SolixBLEDevice):
         set_u16("ac", le16(33))    # Top 12V watts
         set_u16("ad", le16(35))    # Bottom 12V watts
         set_u16("ae", le16(37))    # Solar input watts
-        set_u16("b4", le16(39))    # Total input watts
+        set_u16("b4", le16(39))    # Total input watts (was mis-mapped to "af")
         set_u16("a6", le16(41))    # Total output watts
 
         main_temp = b[66] if len(b) > 66 else 0
@@ -144,11 +167,6 @@ class F2000(SolixBLEDevice):
             expansion_temp -= 256
         set_s16("be", expansion_temp)
 
-        # Battery percentage/health: try legacy single-battery encoding
-        # first (16-bit value 0-100), fall back to packed per-byte
-        # main/expansion encoding if that fails. This restores the
-        # original word-based detection that correctly supports both
-        # single-battery and expansion-battery units.
         packed_battery_format = False
 
         if len(raw) > 71:
@@ -221,19 +239,15 @@ class F2000(SolixBLEDevice):
         if raw[6] == 0x48:
             ac_on = raw[9]
             dc_on = raw[10]
-            power_save_on = raw[11] if len(raw) > 11 else 0
-            led_level = raw[12] if len(raw) > 12 else 0
 
             _LOGGER.debug(
                 f"Received F2000 State Ack: AC={ac_on}, 12V={dc_on}, "
-                f"PowerSave={power_save_on}, LED={led_level}"
+                f"PowerSave={raw[11]}, LED={raw[12]}"
             )
 
             params = dict(self._data) if self._data is not None else self._default_parameters()
             params["b1"] = b"\x01" + ac_on.to_bytes(2, byteorder="little")
             params["b2"] = b"\x01" + dc_on.to_bytes(2, byteorder="little")
-            params["b9"] = b"\x01" + power_save_on.to_bytes(2, byteorder="little")
-            params["ba"] = b"\x01" + led_level.to_bytes(2, byteorder="little")
 
             await self._process_telemetry(params)
             return
@@ -241,14 +255,16 @@ class F2000(SolixBLEDevice):
         if raw[6] == 0x49:
             parameters = self._parse_raw_telemetry(raw)
 
-            # Telemetry frames do not carry switch/LED/power-save state
-            # (bytes 9-12 only exist in State Ack) -- merge previously
-            # confirmed switch state forward so routine telemetry updates
-            # never clobber it back to defaults.
+            # FIX: Telemetry frames do not carry switch state (bytes 9-12
+            # only exist in State Ack) -- `_parse_raw_telemetry` rebuilds
+            # its dict from `_default_parameters()` every call, which
+            # defaults b1/b2 to off. Without this merge, every routine
+            # Telemetry update (which arrives continuously) would silently
+            # stomp the AC/DC switch state that was last confirmed by a
+            # State Ack, causing switches to appear to revert to off.
             if self._data is not None:
-                for key in ("b1", "b2", "b9", "ba"):
-                    if key in self._data:
-                        parameters[key] = self._data[key]
+                parameters["b1"] = self._data.get("b1", parameters["b1"])
+                parameters["b2"] = self._data.get("b2", parameters["b2"])
 
             await self._process_telemetry(parameters)
             return
@@ -268,18 +284,6 @@ class F2000(SolixBLEDevice):
     async def turn_dc_off(self) -> None:
         """Turn the 12V (DC) output off."""
         await self._send_command(0x87, b"\x00\x00")
-
-    async def turn_power_save_on(self) -> None:
-        """Turn Power Save mode on."""
-        await self._send_command(0x8A, b"\x00\x01")
-
-    async def turn_power_save_off(self) -> None:
-        """Turn Power Save mode off."""
-        await self._send_command(0x8A, b"\x00\x00")
-
-    async def set_light_mode(self, mode: LightStatus) -> None:
-        """Set the LED light bar mode (off/low/medium/high/SOS)."""
-        await self._send_command(0x8B, bytes([0x00, mode.value]))
 
     @property
     def hours_remaining(self) -> float:
@@ -349,7 +353,12 @@ class F2000(SolixBLEDevice):
 
     @property
     def ac_power_in(self) -> int:
-        """True AC input watts (bytes 19-20), NOT total input."""
+        """True AC input watts (bytes 19-20), NOT total input.
+
+        Previously this read the "af" key which was wired to Total input
+        watts (bytes 39-40) -- fixed so ac_power_in and total_power_in are
+        now distinct, correctly-named properties.
+        """
         return self._parse_int("af", begin=1)
 
     @property
@@ -370,18 +379,22 @@ class F2000(SolixBLEDevice):
         return self._parse_int("b2", begin=1)
 
     @property
-    def power_save_enabled(self) -> int:
-        return self._parse_int("b9", begin=1)
-
-    @property
-    def led_light_mode(self) -> int:
-        return self._parse_int("ba", begin=1)
-
-    @property
     def software_version(self) -> str:
         if self._data is None:
             return DEFAULT_METADATA_STRING
         return ".".join([digit for digit in str(self._parse_int("b3", begin=1))])
+
+    @property
+    def software_version_expansion(self) -> str:
+        if self._data is None:
+            return DEFAULT_METADATA_STRING
+        return ".".join([digit for digit in str(self._parse_int("b9", begin=1))])
+
+    @property
+    def software_version_controller(self) -> str:
+        if self._data is None:
+            return DEFAULT_METADATA_STRING
+        return ".".join([digit for digit in str(self._parse_int("ba", begin=1))])
 
     @property
     def temperature(self) -> int:
