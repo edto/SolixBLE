@@ -167,10 +167,40 @@ class F2000(SolixBLEDevice):
             expansion_temp -= 256
         set_s16("be", expansion_temp)
 
-        main_battery = b[70] if len(b) > 70 else 0
-        expansion_battery = b[71] if len(b) > 71 else 0
-        set_u16("c1", main_battery if 0 <= main_battery <= 100 else 0)
-        set_u16("c2", expansion_battery if 0 <= expansion_battery <= 100 else 0)
+        packed_battery_format = False
+
+        if len(raw) > 71:
+            legacy_main_battery = int.from_bytes(raw[70:72], byteorder="big")
+            main_battery_byte = raw[70]
+            expansion_battery_byte = raw[71]
+
+            if 0 <= legacy_main_battery <= 100:
+                set_u16("c1", legacy_main_battery)
+                set_u16("c2", 0)
+            elif 0 <= main_battery_byte <= 100 and 0 <= expansion_battery_byte <= 100:
+                set_u16("c1", main_battery_byte)
+                set_u16("c2", expansion_battery_byte)
+                packed_battery_format = True
+
+        if len(raw) > 73:
+            legacy_battery_health = int.from_bytes(raw[72:74], byteorder="big")
+            main_battery_health_byte = raw[72]
+            expansion_battery_health_byte = raw[73]
+
+            if packed_battery_format:
+                if 0 <= main_battery_health_byte <= 100:
+                    set_u16("c3", main_battery_health_byte)
+                if 0 <= expansion_battery_health_byte <= 100:
+                    set_u16("c4", expansion_battery_health_byte)
+            elif 0 <= legacy_battery_health <= 100:
+                set_u16("c3", legacy_battery_health)
+                set_u16("c4", 0)
+            elif 0 <= main_battery_health_byte <= 100 and 0 <= expansion_battery_health_byte <= 100:
+                set_u16("c3", main_battery_health_byte)
+                set_u16("c4", expansion_battery_health_byte)
+                packed_battery_format = True
+
+        set_u16("c5", 1 if packed_battery_format else 0)
 
         serial_bytes = raw[85:101] if len(raw) >= 101 else b""
         if len(serial_bytes) == 16 and all(32 <= x < 127 for x in serial_bytes):
@@ -238,6 +268,22 @@ class F2000(SolixBLEDevice):
 
             await self._process_telemetry(parameters)
             return
+
+    async def turn_ac_on(self) -> None:
+        """Turn the AC output on."""
+        await self._send_command(0x86, b"\x00\x01")
+
+    async def turn_ac_off(self) -> None:
+        """Turn the AC output off."""
+        await self._send_command(0x86, b"\x00\x00")
+
+    async def turn_dc_on(self) -> None:
+        """Turn the 12V (DC) output on."""
+        await self._send_command(0x87, b"\x00\x01")
+
+    async def turn_dc_off(self) -> None:
+        """Turn the 12V (DC) output off."""
+        await self._send_command(0x87, b"\x00\x00")
 
     @property
     def hours_remaining(self) -> float:
