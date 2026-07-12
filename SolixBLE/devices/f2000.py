@@ -345,16 +345,28 @@ class F2000(SolixBLEDevice):
         """Set the LED light bar mode (off/low/medium/high/SOS).
 
         Command ID 0x8B per README ("LED Control" section). Accepts either
-        a LightStatus enum member or a raw int 0-4. This mirrors the
-        existing turn_ac_on/turn_dc_on command pattern. Note the F2000
-        telemetry stream does not expose a readable LED status, so the
-        select entity that calls this remains optimistic (reports the
-        last mode it was told to set).
+        a LightStatus enum member or a raw int 0-4.
+
+        FIX: Per README, State Ack (which is what populates "b6"/
+        led_light_mode) only fires when a PHYSICAL button on the device
+        is pressed -- it is never sent in response to a software command.
+        Without this, "b6" stayed stuck at its last confirmed value after
+        every command sent from Home Assistant, and the next routine
+        Telemetry frame (which arrives continuously and preserves "b6"
+        from self._data) would silently overwrite the select entity's
+        optimistic UI update back to the stale value -- causing the LED
+        to visually "snap back to off" moments after being set via HA.
+        We now optimistically write the confirmed-sent value into
+        self._data ourselves, immediately after a successful command, so
+        subsequent Telemetry frames preserve the CORRECT value instead of
+        the stale one.
         """
         level = mode.value if hasattr(mode, "value") else int(mode)
         if not 0 <= level <= 4:
             raise ValueError(f"LED light mode must be a value from 0 to 4. {level} was given.")
         await self._send_command(0x8B, bytes([0x00, level]))
+        if self._data is not None:
+            self._data["b6"] = b"\x01" + level.to_bytes(2, byteorder="little")
 
     async def set_ac_charging_power(self, watts: int) -> None:
         """Set the AC Charging Power Limit (recharge power).
@@ -387,11 +399,20 @@ class F2000(SolixBLEDevice):
 
     @property
     def time_remaining(self) -> float:
-        return (
-            self._parse_int("a4", begin=1) / 10.0
-            if self._data is not None
-            else DEFAULT_METADATA_FLOAT
-        )
+        """Total remaining runtime in hours (days_remaining * 24 +
+        hours_remaining), i.e. days and hours combined into one duration.
+
+        UPDATED at user request: previously this returned only the raw
+        byte 17 value (hours-of-current-day, "1.5 hours" in the example
+        that prompted this fix), which duplicated hours_remaining and
+        ignored days_remaining (byte 18) entirely -- e.g. "1 day, 1.5
+        hours" displayed as just "1.5 hours" for both sensors. Now
+        combines both fields so time_remaining reflects the true total
+        duration (in this example, 25.5 hours).
+        """
+        if self._data is None:
+            return DEFAULT_METADATA_FLOAT
+        return (self.days_remaining * 24) + (self._parse_int("a4", begin=1) / 10.0)
 
     @property
     def timestamp_remaining(self) -> datetime | None:
