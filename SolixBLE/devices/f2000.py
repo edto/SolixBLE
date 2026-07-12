@@ -40,7 +40,7 @@ class F2000(SolixBLEDevice):
     This model is also known as the A1780 or the 767 PowerHouse.
     """
 
-    EXPECTED_TELEMETRY_LENGTH: int = 102
+    _EXPECTED_TELEMETRY_LENGTH: int = 102
 
     @property
     def negotiated(self) -> bool:
@@ -48,7 +48,7 @@ class F2000(SolixBLEDevice):
 
     @property
     def available(self) -> bool:
-        return self.connected and self.data is not None
+        return self.connected and self._data is not None
 
     @staticmethod
     def _checksum(packet: bytes) -> int:
@@ -58,9 +58,9 @@ class F2000(SolixBLEDevice):
         length = 9 + len(parameters)
         header = bytes.fromhex("08ee00000002")
         body = header + bytes([command_id, length]) + parameters
-        checksum = self.checksum(body)
+        checksum = self._checksum(body)
         packet = body + bytes([checksum])
-        await self.client.write_gatt_char(UUID_COMMAND, packet, response=True)
+        await self._client.write_gatt_char(UUID_COMMAND, packet, response=True)
 
     def _default_parameters(self) -> dict[str, bytes]:
         return {
@@ -101,9 +101,9 @@ class F2000(SolixBLEDevice):
         now correctly reads bytes 19-20 ("AC input watts"), separate from
         total_power_in (bytes 39-40, "Total input watts").
         """
-        params = self.default_parameters()
+        params = self._default_parameters()
 
-        if len(raw) != self.EXPECTED_TELEMETRY_LENGTH:
+        if len(raw) != self._EXPECTED_TELEMETRY_LENGTH:
             return params
 
         b = list(raw)
@@ -193,12 +193,12 @@ class F2000(SolixBLEDevice):
     async def _process_notification(
         self, client: BleakClient, handle: int, data: bytearray
     ) -> None:
-        if self.client is not client:
+        if self._client is not client:
             _LOGGER.debug("Ignoring notification from old client")
             return
 
         raw = bytes(data)
-        self.last_packet_timestamp = time.time()
+        self._last_packet_timestamp = time.time()
 
         _LOGGER.debug(
             f"Received raw F2000 notification from '{self.name}'. length: {len(raw)}, packet: '{raw.hex()}'"
@@ -229,193 +229,193 @@ class F2000(SolixBLEDevice):
                 f"PowerSave={power_save_on}, LED={led_level}"
             )
 
-            params = dict(self.data) if self.data is not None else self.default_parameters()
+            params = dict(self._data) if self._data is not None else self._default_parameters()
             params["b1"] = b"\x01" + ac_on.to_bytes(2, byteorder="little")
             params["b2"] = b"\x01" + dc_on.to_bytes(2, byteorder="little")
             params["b9"] = b"\x01" + power_save_on.to_bytes(2, byteorder="little")
             params["ba"] = b"\x01" + led_level.to_bytes(2, byteorder="little")
 
-            await self.process_telemetry(params)
+            await self._process_telemetry(params)
             return
 
         if raw[6] == 0x49:
-            parameters = self.parse_raw_telemetry(raw)
+            parameters = self._parse_raw_telemetry(raw)
 
             # Telemetry frames do not carry switch/LED/power-save state
             # (bytes 9-12 only exist in State Ack) -- merge previously
             # confirmed switch state forward so routine telemetry updates
             # never clobber it back to defaults.
-            if self.data is not None:
+            if self._data is not None:
                 for key in ("b1", "b2", "b9", "ba"):
-                    if key in self.data:
-                        parameters[key] = self.data[key]
+                    if key in self._data:
+                        parameters[key] = self._data[key]
 
-            await self.process_telemetry(parameters)
+            await self._process_telemetry(parameters)
             return
 
     async def turn_ac_on(self) -> None:
         """Turn the AC output on."""
-        await self.send_command(0x86, b"\x00\x01")
+        await self._send_command(0x86, b"\x00\x01")
 
     async def turn_ac_off(self) -> None:
         """Turn the AC output off."""
-        await self.send_command(0x86, b"\x00\x00")
+        await self._send_command(0x86, b"\x00\x00")
 
     async def turn_dc_on(self) -> None:
         """Turn the 12V (DC) output on."""
-        await self.send_command(0x87, b"\x00\x01")
+        await self._send_command(0x87, b"\x00\x01")
 
     async def turn_dc_off(self) -> None:
         """Turn the 12V (DC) output off."""
-        await self.send_command(0x87, b"\x00\x00")
+        await self._send_command(0x87, b"\x00\x00")
 
     async def turn_power_save_on(self) -> None:
         """Turn Power Save mode on."""
-        await self.send_command(0x8A, b"\x00\x01")
+        await self._send_command(0x8A, b"\x00\x01")
 
     async def turn_power_save_off(self) -> None:
         """Turn Power Save mode off."""
-        await self.send_command(0x8A, b"\x00\x00")
+        await self._send_command(0x8A, b"\x00\x00")
 
     async def set_light_mode(self, mode: LightStatus) -> None:
         """Set the LED light bar mode (off/low/medium/high/SOS)."""
-        await self.send_command(0x8B, bytes([0x00, mode.value]))
+        await self._send_command(0x8B, bytes([0x00, mode.value]))
 
     @property
     def hours_remaining(self) -> float:
-        if self.data is None:
+        if self._data is None:
             return DEFAULT_METADATA_FLOAT
         return round(divmod(self.time_remaining, 24)[1], 1)
 
     @property
     def days_remaining(self) -> int:
-        if self.data is None:
+        if self._data is None:
             return DEFAULT_METADATA_INT
         return round(divmod(self.time_remaining, 24)[0])
 
     @property
     def time_remaining(self) -> float:
         return (
-            self.parse_int("a4", begin=1) / 10.0
-            if self.data is not None
+            self._parse_int("a4", begin=1) / 10.0
+            if self._data is not None
             else DEFAULT_METADATA_FLOAT
         )
 
     @property
     def timestamp_remaining(self) -> datetime | None:
-        if self.data is None:
+        if self._data is None:
             return None
         return datetime.now() + timedelta(hours=self.time_remaining)
 
     @property
     def ac_to_battery(self) -> int:
-        return self.parse_int("af", begin=1)
+        return self._parse_int("af", begin=1)
 
     @property
     def ac_power_out_sockets(self) -> int:
-        return self.parse_int("a6", begin=1)
+        return self._parse_int("a6", begin=1)
 
     @property
     def usb_c1_power(self) -> int:
-        return self.parse_int("a7", begin=1)
+        return self._parse_int("a7", begin=1)
 
     @property
     def usb_c2_power(self) -> int:
-        return self.parse_int("a8", begin=1)
+        return self._parse_int("a8", begin=1)
 
     @property
     def usb_c3_power(self) -> int:
-        return self.parse_int("a9", begin=1)
+        return self._parse_int("a9", begin=1)
 
     @property
     def usb_a1_power(self) -> int:
-        return self.parse_int("aa", begin=1)
+        return self._parse_int("aa", begin=1)
 
     @property
     def usb_a2_power(self) -> int:
-        return self.parse_int("ab", begin=1)
+        return self._parse_int("ab", begin=1)
 
     @property
     def dc_1_power_out(self) -> int:
-        return self.parse_int("ac", begin=1)
+        return self._parse_int("ac", begin=1)
 
     @property
     def dc_2_power_out(self) -> int:
-        return self.parse_int("ad", begin=1)
+        return self._parse_int("ad", begin=1)
 
     @property
     def solar_power_in(self) -> int:
-        return self.parse_int("ae", begin=1)
+        return self._parse_int("ae", begin=1)
 
     @property
     def ac_power_in(self) -> int:
         """True AC input watts (bytes 19-20), NOT total input."""
-        return self.parse_int("af", begin=1)
+        return self._parse_int("af", begin=1)
 
     @property
     def total_power_in(self) -> int:
         """Total input watts (bytes 39-40): AC input + solar input combined."""
-        return self.parse_int("b4", begin=1)
+        return self._parse_int("b4", begin=1)
 
     @property
     def ac_power_out(self) -> int:
-        return self.parse_int("b0", begin=1)
+        return self._parse_int("b0", begin=1)
 
     @property
     def ac_inverter_enabled(self) -> int:
-        return self.parse_int("b1", begin=1)
+        return self._parse_int("b1", begin=1)
 
     @property
     def dc12v_enabled(self) -> int:
-        return self.parse_int("b2", begin=1)
+        return self._parse_int("b2", begin=1)
 
     @property
     def power_save_enabled(self) -> int:
-        return self.parse_int("b9", begin=1)
+        return self._parse_int("b9", begin=1)
 
     @property
     def led_light_mode(self) -> int:
-        return self.parse_int("ba", begin=1)
+        return self._parse_int("ba", begin=1)
 
     @property
     def software_version(self) -> str:
-        if self.data is None:
+        if self._data is None:
             return DEFAULT_METADATA_STRING
-        return ".".join([digit for digit in str(self.parse_int("b3", begin=1))])
+        return ".".join([digit for digit in str(self._parse_int("b3", begin=1))])
 
     @property
     def temperature(self) -> int:
-        return self.parse_int("bd", begin=1, signed=True)
+        return self._parse_int("bd", begin=1, signed=True)
 
     @property
     def temperature_expansion(self) -> int:
-        return self.parse_int("be", begin=1, signed=True)
+        return self._parse_int("be", begin=1, signed=True)
 
     @property
     def battery_percentage(self) -> int:
-        return self.parse_int("c1", begin=1)
+        return self._parse_int("c1", begin=1)
 
     @property
     def battery_percentage_expansion(self) -> int:
-        return self.parse_int("c2", begin=1)
+        return self._parse_int("c2", begin=1)
 
     @property
     def battery_health(self) -> int:
-        return self.parse_int("c3", begin=1)
+        return self._parse_int("c3", begin=1)
 
     @property
     def battery_health_expansion(self) -> int:
-        return self.parse_int("c4", begin=1)
+        return self._parse_int("c4", begin=1)
 
     @property
     def num_expansion(self) -> int:
-        return self.parse_int("c5", begin=1)
+        return self._parse_int("c5", begin=1)
 
     @property
     def serial_number(self) -> str:
-        if self.data is None:
+        if self._data is None:
             return DEFAULT_METADATA_STRING
-        value = self.parse_string("d0", begin=1)
+        value = self._parse_string("d0", begin=1)
         if not value or value == "0" or set(value) == {"0"}:
             return DEFAULT_METADATA_STRING
         return value
