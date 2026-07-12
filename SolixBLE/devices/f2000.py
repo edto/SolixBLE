@@ -380,7 +380,13 @@ class F2000(SolixBLEDevice):
         """
         if not 200 <= watts <= 2200:
             raise ValueError(f"power must be a value from 200 to 2200. {watts} was given.")
-        await self._send_command(0x80, watts.to_bytes(2, byteorder="little"))
+        # FIX: README specifies parameters = 0x00 + 2-byte watts (3 bytes
+        # total), same leading-padding pattern as every other F2000
+        # command (turn_ac_on, turn_dc_on, turn_power_save_on,
+        # set_light_mode all include this 0x00 prefix). This byte was
+        # dropped in a prior edit, which shifted the packet's length/byte
+        # layout and caused the device to silently ignore the command.
+        await self._send_command(0x80, bytes([0x00]) + watts.to_bytes(2, byteorder="little"))
 
     @property
     def hours_remaining(self) -> float:
