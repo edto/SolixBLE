@@ -149,7 +149,15 @@ class F2000(SolixBLEDevice):
             # and multiplied it by 10, which both discarded byte 16 and
             # cancelled out the /10.0 in time_remaining, silently reporting
             # the wrong "hours remaining" value.
-            remaining_tenths = int.from_bytes(raw[16:18], byteorder="big")
+            # FIX: must be little-endian per README ("all two byte
+            # integers below are little endian"), matching every other
+            # 2-byte field in this parser (see le16() helper used
+            # elsewhere). Reading this as big-endian silently worked for
+            # small values (high byte == 0x00, so byte order didn't
+            # matter) but broke for larger values -- e.g. an expansion
+            # battery with 26.4 hours (264 tenths = 0x0108) had its bytes
+            # swapped, producing a small garbage number instead.
+            remaining_tenths = int.from_bytes(raw[16:18], byteorder="little")
             if 0 <= remaining_tenths < 10000:
                 set_u16("a4", remaining_tenths)
 
