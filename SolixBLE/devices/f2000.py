@@ -82,6 +82,7 @@ class F2000(SolixBLEDevice):
             "b4": b"\x01\x00",
             "b5": b"\x01\x00",
             "b6": b"\x01\x00",
+            "b8": b"\x01\x00",
             "b9": b"\x01\x00",
             "ba": b"\x01\x00",
             "bd": b"\x01\x00",
@@ -142,25 +143,30 @@ class F2000(SolixBLEDevice):
         def le16(index: int) -> int:
             return int.from_bytes(raw[index : index + 2], byteorder="little")
 
-        if len(raw) >= 18:
-            # FIX: "remaining hours" must come from the 16-bit big-endian
-            # word spanning bytes 16-17, stored directly (as tenths of an
-            # hour) with NO extra multiplication -- time_remaining already
-            # divides this by 10.0. The previous code read only byte 17
-            # and multiplied it by 10, which both discarded byte 16 and
-            # cancelled out the /10.0 in time_remaining, silently reporting
-            # the wrong "hours remaining" value.
-            # FIX: must be little-endian per README ("all two byte
-            # integers below are little endian"), matching every other
-            # 2-byte field in this parser (see le16() helper used
-            # elsewhere). Reading this as big-endian silently worked for
-            # small values (high byte == 0x00, so byte order didn't
-            # matter) but broke for larger values -- e.g. an expansion
-            # battery with 26.4 hours (264 tenths = 0x0108) had its bytes
-            # swapped, producing a small garbage number instead.
-            remaining_tenths = int.from_bytes(raw[16:18], byteorder="little")
-            if 0 <= remaining_tenths < 10000:
-                set_u16("a4", remaining_tenths)
+        if len(raw) > 18:
+            # CORRECTED: per README, byte 17 ALONE is "X / 10.0 = battery
+            # hours remaining" and byte 18 ALONE is "battery days
+            # remaining" -- these are two independent single-byte fields,
+            # not a combined 2-byte word. My previous fix wrongly treated
+            # bytes 16-17 as one 16-bit value, which pulled byte 16
+            # (documented as "Unknown") into the calculation and broke
+            # time_remaining for BOTH batteries, not just the expansion
+            # one. Storing byte 17 directly as tenths-of-an-hour here;
+            # time_remaining's existing /10.0 recovers the true hour value.
+            # CORRECTED: README says "byte 17: X / 10.0 = battery hours
+            # remaining". time_remaining already divides "a4" by 10.0, so
+            # "a4" must store the raw byte 17 value X directly, with NO
+            # multiplication. (An earlier fix mistakenly multiplied by 10
+            # here, which combined with time_remaining's /10.0 produced a
+            # value 10x too large.)
+            set_u16("a4", int(raw[17]))
+
+            # ADDED: read byte 18 directly for "battery days remaining" as
+            # its own independent field (README documents it separately
+            # from byte 17), instead of deriving days via
+            # divmod(time_remaining, 24) which may not match the device's
+            # own internal rounding.
+            set_u16("b8", int(raw[18]))
 
         set_u16("af", le16(19))  # AC input watts
         set_u16("b0", le16(21))  # AC output watts
@@ -353,13 +359,15 @@ class F2000(SolixBLEDevice):
     async def set_ac_charging_power(self, watts: int) -> None:
         """Set the AC Charging Power Limit (recharge power).
 
-        Command ID 0x80 per README ("Recharge Power" section). Valid range
-        is 200-1440 watts. Canned values in the Anker app are 200, 300,
-        400, 500, 600, 750, 1440 (silent 749, high speed 1439), but any
-        value in the documented range is accepted here.
+        Command ID 0x80 per README ("Recharge Power" section). README
+        documents 200-1440 watts as the range, with canned app values of
+        200, 300, 400, 500, 600, 750, 1440 (silent 749, high speed 1439).
+        UPDATED: range extended to 200-2200 watts per user testing --
+        confirmed the device accepts values above the documented 1440W
+        ceiling, up to 2200W.
         """
-        if not 200 <= watts <= 1440:
-            raise ValueError(f"power must be a value from 200 to 1440. {watts} was given.")
+        if not 200 <= watts <= 2200:
+            raise ValueError(f"power must be a value from 200 to 2200. {watts} was given.")
         await self._send_command(0x80, watts.to_bytes(2, byteorder="little"))
 
     @property
@@ -370,9 +378,12 @@ class F2000(SolixBLEDevice):
 
     @property
     def days_remaining(self) -> int:
+        """Battery days remaining, read directly from byte 18 (README:
+        "battery days remaining"), independent of hours_remaining.
+        """
         if self._data is None:
             return DEFAULT_METADATA_INT
-        return round(divmod(self.time_remaining, 24)[0])
+        return self._parse_int("b8", begin=1)
 
     @property
     def time_remaining(self) -> float:
