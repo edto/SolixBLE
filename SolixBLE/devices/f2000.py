@@ -372,12 +372,28 @@ class F2000(SolixBLEDevice):
 
         Command ID 0x8A per README ("Power Save" section), same payload
         shape as turn_ac_on/turn_dc_on above.
+
+        FIX: this was missed when the same optimistic-update fix was
+        applied to turn_ac_on/turn_dc_on/set_light_mode -- it had neither
+        the self._data write nor the callback trigger, so it had the
+        full original bug (State Ack only fires on physical button press,
+        and even a direct self._data mutation alone does not notify
+        entities). Same fix applied here: write the confirmed value into
+        self._data ("b5") immediately, then explicitly run callbacks so
+        the switch updates right away instead of waiting on some
+        unrelated later notification.
         """
         await self._send_command(0x8A, b"\x00\x01")
+        if self._data is not None:
+            self._data["b5"] = b"\x01\x01\x00"
+            self._run_state_changed_callbacks()
 
     async def turn_power_save_off(self) -> None:
-        """Turn Power Saving Mode off."""
+        """Turn Power Saving Mode off. See turn_power_save_on for why b5 is updated here."""
         await self._send_command(0x8A, b"\x00\x00")
+        if self._data is not None:
+            self._data["b5"] = b"\x01\x00\x00"
+            self._run_state_changed_callbacks()
 
     async def set_light_mode(self, mode) -> None:
         """Set the LED light bar mode (off/low/medium/high/SOS).
