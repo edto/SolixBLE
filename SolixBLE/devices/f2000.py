@@ -331,24 +331,41 @@ class F2000(SolixBLEDevice):
         await self._send_command(0x86, b"\x00\x01")
         if self._data is not None:
             self._data["b1"] = b"\x01\x01\x00"
+            # FIX: mutating self._data directly does NOT notify any
+            # registered entity -- callbacks only fire from inside
+            # _process_telemetry(), which this optimistic write bypasses
+            # entirely. Without this, the switch entity never re-reads
+            # the device and never calls async_write_ha_state(), so the
+            # UI silently stays stale until some LATER, unrelated
+            # Telemetry/State Ack frame happens to trigger a callback for
+            # a different reason and coincidentally picks up the already-
+            # correct value. This is exactly the "flips back, then later
+            # reports correct" / "sticks on incorrect state" behavior --
+            # explicitly running callbacks now makes the UI update
+            # immediately, matching what the physical-button State Ack
+            # path already does via _process_telemetry.
+            self._run_state_changed_callbacks()
 
     async def turn_ac_off(self) -> None:
         """Turn the AC output off. See turn_ac_on for why b1 is updated here."""
         await self._send_command(0x86, b"\x00\x00")
         if self._data is not None:
             self._data["b1"] = b"\x01\x00\x00"
+            self._run_state_changed_callbacks()
 
     async def turn_dc_on(self) -> None:
         """Turn the 12V (DC) output on. See turn_ac_on for why b2 is updated here."""
         await self._send_command(0x87, b"\x00\x01")
         if self._data is not None:
             self._data["b2"] = b"\x01\x01\x00"
+            self._run_state_changed_callbacks()
 
     async def turn_dc_off(self) -> None:
         """Turn the 12V (DC) output off. See turn_ac_on for why b2 is updated here."""
         await self._send_command(0x87, b"\x00\x00")
         if self._data is not None:
             self._data["b2"] = b"\x01\x00\x00"
+            self._run_state_changed_callbacks()
 
     async def turn_power_save_on(self) -> None:
         """Turn Power Saving Mode on.
@@ -388,6 +405,9 @@ class F2000(SolixBLEDevice):
         await self._send_command(0x8B, bytes([0x00, level]))
         if self._data is not None:
             self._data["b6"] = b"\x01" + level.to_bytes(2, byteorder="little")
+            # FIX: same missing-callback bug as turn_ac_on/turn_dc_on --
+            # mutating self._data alone does not notify entities.
+            self._run_state_changed_callbacks()
 
     async def set_ac_charging_power(self, watts: int) -> None:
         """Set the AC Charging Power Limit (recharge power).
