@@ -313,20 +313,42 @@ class F2000(SolixBLEDevice):
             return
 
     async def turn_ac_on(self) -> None:
-        """Turn the AC output on."""
+        """Turn the AC output on.
+
+        FIX: same root cause as the earlier LED "snaps back" bug -- State
+        Ack (which populates "b1"/ac_inverter_enabled) only fires on a
+        PHYSICAL button press per README, never after a software command.
+        Without this, "b1" stayed at its stale pre-toggle value after a
+        command sent from Home Assistant, and the next routine Telemetry
+        frame (which preserves "b1" from self._data) would push that
+        stale value back out via the state-change callback, snapping the
+        switch back to its old position until a physical button press
+        finally sent a real State Ack. We now optimistically write the
+        confirmed-sent value into self._data ourselves, immediately after
+        a successful command, so subsequent Telemetry frames preserve the
+        CORRECT value instead of the stale one.
+        """
         await self._send_command(0x86, b"\x00\x01")
+        if self._data is not None:
+            self._data["b1"] = b"\x01\x01\x00"
 
     async def turn_ac_off(self) -> None:
-        """Turn the AC output off."""
+        """Turn the AC output off. See turn_ac_on for why b1 is updated here."""
         await self._send_command(0x86, b"\x00\x00")
+        if self._data is not None:
+            self._data["b1"] = b"\x01\x00\x00"
 
     async def turn_dc_on(self) -> None:
-        """Turn the 12V (DC) output on."""
+        """Turn the 12V (DC) output on. See turn_ac_on for why b2 is updated here."""
         await self._send_command(0x87, b"\x00\x01")
+        if self._data is not None:
+            self._data["b2"] = b"\x01\x01\x00"
 
     async def turn_dc_off(self) -> None:
-        """Turn the 12V (DC) output off."""
+        """Turn the 12V (DC) output off. See turn_ac_on for why b2 is updated here."""
         await self._send_command(0x87, b"\x00\x00")
+        if self._data is not None:
+            self._data["b2"] = b"\x01\x00\x00"
 
     async def turn_power_save_on(self) -> None:
         """Turn Power Saving Mode on.
